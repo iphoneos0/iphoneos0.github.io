@@ -9,7 +9,7 @@
   <!--
     隐私政策（照蹄铁小马棚那一页改的）。游戏里「How to play」最下面的 Privacy policy 打开的就是这一页；
     公开网址：https://iphoneos0.github.io/holdyourbreath/privacy.html（仓库 iphoneos0/iphoneos0.github.io，改了这里要同步过去），App Store Connect 和 Play 管理中心都填它。
-    开发者名字、联系邮箱用 Google Play 账号公开显示的那两个（docs/29）。接了统计平台以后，「Analytics」那段要按实际改写。
+    开发者名字、联系邮箱用 Google Play 账号公开显示的那两个（docs/29）。「Analytics」那段 2026-11-21 按接上的 Firebase Analytics 改写了。
   -->
   <style>
     body { margin: 0; padding: 20px 18px 40px; font: 15px/1.6 -apple-system, "PingFang SC", system-ui, sans-serif; color: #1c2230; background: #f7f4ec; }
@@ -23,7 +23,7 @@
 </head>
 <body>
   <h1>Privacy Policy</h1>
-  <p class="muted">Hold Your Breath · Last updated November 19, 2026</p>
+  <p class="muted">Hold Your Breath · Last updated November 21, 2026</p>
 
   <p>Hold Your Breath (“the game”) is made by lulucard. This page explains what the game does with information about you. Short version: the game has no accounts, does not ask for your name, email, location, contacts or photos, and does not sell any data. Ads are provided by Google AdMob; see “Ads” below.</p>
 
@@ -40,8 +40,8 @@
   <p>Learn more in <a href="https://policies.google.com/privacy">Google’s Privacy Policy</a> and <a href="https://policies.google.com/technologies/partner-sites">how Google uses information from apps that use its services</a>.</p>
 
   <h2>Analytics</h2>
-  <!-- TODO: 接了统计平台以后改成：用的哪家、收集哪些匿名事件、不包含个人信息 -->
-  <p>This version does not send usage data anywhere.</p>
+  <!-- 2026-11-21 接了 Firebase Analytics（docs/30），从 1.0.1 起 -->
+  <p>From version 1.0.1 the game uses Google Analytics for Firebase to learn how the game is played, for example how long a run lasts, where runs end, which ads were watched and which upgrades were bought. It records these as anonymous game events together with an app instance ID, device model, OS version, country and app version. It does not record your name, email or anything you type. If you are in the EEA, the UK or Switzerland, analytics stays off until you agree in the consent message, and follows what you choose there. Learn more in <a href="https://firebase.google.com/support/privacy">Firebase’s privacy information</a>.</p>
 
   <h2>Children</h2>
   <p>The game is not directed to children under 13 and does not knowingly collect personal information from anyone.</p>
@@ -52,7 +52,7 @@
   <hr>
 
   <h1 id="zh">隐私政策</h1>
-  <p class="muted">Hold Your Breath · 2026 年 11 月 19 日更新</p>
+  <p class="muted">Hold Your Breath · 2026 年 11 月 21 日更新</p>
   <p>Hold Your Breath（下称「游戏」）由 lulucard 制作。简单说：游戏没有账号，不要你的名字、邮箱、位置、通讯录或照片，也不卖任何数据。广告由 Google AdMob 提供，见下面「广告」。</p>
   <h2>留在你手机上的</h2>
   <p>你的进度（金币、任务、升级、最远距离、设置）存在你自己的设备上，不发给我们。删掉游戏就一起删掉了。</p>
@@ -64,7 +64,7 @@
   <p>如果你在欧洲经济区、英国或瑞士，游戏会在请求任何广告之前先征得你的同意，之后随时可以在游戏主页的 设置 → Ad privacy choices 里改。</p>
   <p>详见 <a href="https://policies.google.com/privacy">Google 隐私权政策</a> 和 <a href="https://policies.google.com/technologies/partner-sites">Google 如何使用来自使用其服务的应用的信息</a>。</p>
   <h2>统计</h2>
-  <p>这个版本不往外发任何使用数据。</p>
+  <p>从 1.0.1 版起，游戏用 Google Analytics for Firebase 了解大家怎么玩，比如一局跑多久、在哪里被追上、看了哪些广告、买了哪些升级。记下来的是匿名的游戏事件，加上一个 App 实例 ID、手机型号、系统版本、国家和 App 版本。不记你的名字、邮箱或你输入的任何东西。在欧洲经济区、英国或瑞士，同意消息里点了同意才开始统计，照你的选择来。详见 <a href="https://firebase.google.com/support/privacy">Firebase 的隐私说明</a>。</p>
   <h2>儿童</h2>
   <p>游戏不面向 13 岁以下的儿童，也不会有意收集任何人的个人信息。</p>
   <h2>变更和联系</h2>
