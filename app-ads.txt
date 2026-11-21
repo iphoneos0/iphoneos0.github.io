@@ -1,1 +1,4 @@
+# Hold Your Breath（2026-11-21 起，macos0@icloud.com 的 AdMob）
+google.com, pub-8296923156982965, DIRECT, f08c47fec0942fa0
+# 原来的 AdMob（蹄铁小马棚还在用）
 google.com, pub-3656802009650159, DIRECT, f08c47fec0942fa0
