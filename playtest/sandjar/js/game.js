@@ -78,7 +78,7 @@
     // 刘海/灵动岛和底部横条让开（进了全屏壳才不是 0）
     const cssv = k => parseFloat(getComputedStyle(document.documentElement).getPropertyValue(k)) || 0;
     const sat = cssv('--sat'), sab = cssv('--sab');
-    const hud = Math.max(70, vh * 0.1) + sat, tray = Math.max(120, vh * 0.2) + sab;
+    const hud = Math.max(84, vh * 0.1) + sat, tray = Math.max(120, vh * 0.2) + sab;
     const cs = Math.floor(Math.min((gameW - 36) / COLS, (vh - hud - tray - 10) / (ROWS + HEAD)));
     const jw = cs * COLS, jh = cs * (ROWS + HEAD);
     const jx = Math.round((vw - jw) / 2), jy = Math.round(hud);
@@ -91,6 +91,11 @@
 
   // ---------- 一局 ----------
   let st, drag = null, popups = [], flashes = [], overAt = 0, lastColors = 3, tutFirstX = -1;
+  // 消除反馈（docs/06：学 Sand Blast 把反馈做大）：整屏闪成被消的颜色、震一下、沙粒迸散、连击大字
+  let bgFlash = null, shake = null, sparks = [], comboBanner = null;
+  // 分数：放大以后加一条「下一个里程碑」进度条；分数数字滚动着往上涨
+  const MILESTONES = [1000, 2500, 5000, 10000, 25000, 50000, 100000, 250000, 500000, 1000000];
+  let mileIdx = 0, shownScore = 0, lastHudNow = 0;
   let run = null;   // 试玩记录里的这一局
   let best = +store.get('sand1-best', 0) || 0;
 
@@ -100,6 +105,7 @@
     grainsDirty = true;
     st.events.length = 0;
     drag = null; popups = []; flashes = []; overAt = 0; lastColors = S.CFG.start; tutFirstX = -1;
+    bgFlash = null; shake = null; sparks = []; comboBanner = null; mileIdx = 0; shownScore = 0;
     run = { at: new Date().toISOString(), t0: performance.now(), firstClear: null, tutorial };
     document.getElementById('over').classList.add('hide');
   }
@@ -111,10 +117,16 @@
     if (e.type === 'land') {
       Snd.land(S.SHAPES[e.s].cells.length); haptic('light');
       if (st.tutorial && tutFirstX < 0) tutFirstX = e.x;
+      addPopup({ text: '+' + e.pts, sub: '', x: L.jx + (e.x + S.shapeW(e.s) * CELL / 2) * L.gp, y: L.jy + e.y * L.gp, t0: now, c: '#8A7660', small: true });
     } else if (e.type === 'clear') {
-      const cells = [];
-      for (const p of e.parts) for (const i of p.cells) cells.push(i);
-      flashes.push({ cells, t0: now });
+      const cells = [], cols = [];
+      for (const p of e.parts) for (const i of p.cells) { cells.push(i); cols.push(p.c); }
+      flashes.push({ cells, cols, t0: now });
+      const col = COLORS[e.parts[0].c];
+      bgFlash = { c: col, t0: now, k: Math.min(1, 0.45 + 0.15 * e.combo) };
+      shake = { t0: now, amp: 2 + 2 * e.combo };
+      spawnSparks(cells, cols, now);
+      if (e.combo >= 2) comboBanner = { n: e.combo, t0: now };
       let sx = 0, sy = 0;
       for (let k = 0; k < cells.length; k += 7) { sx += cells[k] % W; sy += (cells[k] / W) | 0; }
       const m = Math.ceil(cells.length / 7);
@@ -292,7 +304,7 @@
   function drawGrains(now) {
     // 快接通的那片沙一闪一闪地发亮（docs/02 第一节：规则自己会说话）
     const hintOn = !st.over && st.hints.length > 0 && (Math.sin(now * 6) + 1) / 2 > 0.35;
-    flashes = flashes.filter(f => now - f.t0 < 0.25);
+    flashes = flashes.filter(f => now - f.t0 < FLASH_T);
     if (grainsDirty || hintOn !== lastHintOn || flashes.length) {
       grainsDirty = false; lastHintOn = hintOn;
       const g = st.grid, sd = st.shade;
@@ -307,19 +319,84 @@
           for (let a = 0; a < K; a++, o += KW) for (let b = 0; b < K; b++) px[o + b] = T[t++];
         }
       }
-      // 刚消掉的位置白光一闪
+      // 刚消掉的沙：先亮成浅色，再在 0.35 秒里淡掉（同时沙粒迸散，见 spawnSparks）
       for (const f of flashes) {
-        const wv = (0x00FFFFFF | (((1 - (now - f.t0) / 0.25) * 255) << 24)) >>> 0;
-        for (const i of f.cells) {
+        const alpha = Math.max(0, 1 - (now - f.t0) / FLASH_T);
+        const a8 = (alpha * alpha * 255) << 24;
+        for (let n = 0; n < f.cells.length; n++) {
+          const i = f.cells[n];
           if (g[i]) continue;
-          let o = ((i / W) | 0) * K * KW + (i % W) * K;
-          for (let a = 0; a < K; a++, o += KW) for (let b = 0; b < K; b++) px[o + b] = wv;
+          let o = ((i / W) | 0) * K * KW + (i % W) * K, t = (f.cols[n] * VAR + (i & 15)) * KK;
+          for (let a = 0; a < K; a++, o += KW) for (let b = 0; b < K; b++) px[o + b] = ((TILE_HI[t++] & 0x00FFFFFF) | a8) >>> 0;
         }
       }
       octx.putImageData(img, 0, 0);
     }
     ctx.imageSmoothingEnabled = false;
     ctx.drawImage(off, L.jx, L.jy, L.jw, L.jh);
+  }
+
+  const FLASH_T = 0.35;
+
+  // 消除时从消掉的沙里迸出一把亮沙粒，往上飞再落下。位置只跟时间有关（不用 Math.random），录视频时一帧不差
+  function spawnSparks(cells, cols, now) {
+    let r = (st.tick * 7919 + st.clears * 104729) >>> 0;
+    const rnd = () => ((r = (Math.imul(r, 1103515245) + 12345) >>> 0) / 4294967296);
+    const n = Math.min(120, 30 + (cells.length >> 4));
+    for (let k = 0; k < n; k++) {
+      const j = (rnd() * cells.length) | 0, i = cells[j];
+      sparks.push({ x: L.jx + (i % W + 0.5) * L.gp, y: L.jy + (((i / W) | 0) + 0.5) * L.gp,
+        vx: (rnd() - 0.5) * 220, vy: -60 - rnd() * 280, life: 0.55 + rnd() * 0.4, t0: now, c: cols[j] });
+    }
+  }
+  function drawSparks(now) {
+    sparks = sparks.filter(p => now - p.t0 < p.life);
+    for (const p of sparks) {
+      const t = now - p.t0, a = 1 - t / p.life, sz = L.gp * (0.7 + 0.9 * a);
+      ctx.globalAlpha = a;
+      ctx.fillStyle = COLORS[p.c];
+      ctx.fillRect(p.x + p.vx * t - sz / 2, p.y + p.vy * t + 520 * t * t - sz / 2, sz, sz);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // 连击 2 次以上：瓶子上方一行彩虹色大字，先放大再落回
+  function drawComboBanner(now) {
+    if (!comboBanner || st.over) return;
+    const t = (now - comboBanner.t0) / 1.0;
+    if (t >= 1) { comboBanner = null; return; }
+    const sc = t < 0.15 ? 1.5 - (t / 0.15) * 0.5 : 1, a = t < 0.7 ? 1 : 1 - (t - 0.7) / 0.3;
+    const text = 'COMBO ×' + comboBanner.n, x = L.vw / 2, y = L.jy + L.cs * 2.2;
+    ctx.save();
+    ctx.globalAlpha = a; ctx.translate(x, y); ctx.scale(sc, sc);
+    ctx.font = '900 ' + Math.round(Math.min(46, L.jw / 7)) + 'px -apple-system, BlinkMacSystemFont, sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    const w = ctx.measureText(text).width, grad = ctx.createLinearGradient(-w / 2, 0, w / 2, 0);
+    for (let c = 1; c <= 6; c++) grad.addColorStop((c - 1) / 5, COLORS[c]);
+    ctx.lineWidth = 8; ctx.strokeStyle = '#fff'; ctx.lineJoin = 'round'; ctx.strokeText(text, 0, 0);
+    ctx.fillStyle = grad; ctx.fillText(text, 0, 0);
+    ctx.restore();
+  }
+
+  // 第一局：瓶口里一行字把规则说出来（docs/06：三款竞品都用字讲，我们原来只有一只手）
+  function drawRuleLine(now) {
+    if (!st.tutorial || st.clears || st.over) return;
+    const text = 'Connect one color wall to wall';
+    ctx.save();
+    let fs = 18;
+    ctx.font = '800 ' + fs + 'px -apple-system, BlinkMacSystemFont, sans-serif';
+    const w = ctx.measureText(text).width, room = L.jw - 70;
+    if (w > room) { fs = Math.floor(fs * room / w); ctx.font = '800 ' + fs + 'px -apple-system, BlinkMacSystemFont, sans-serif'; }
+    const y = L.rimY + L.cs * 1.7, a = 0.75 + 0.25 * Math.sin(now * 4);   // 瓶子里、瓶口线下面（教学手拖的块在瓶口上面，不会压住字）
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#6B5845'; ctx.globalAlpha = a; ctx.fillText(text, L.vw / 2, y);
+    // 两头的箭头指着两边墙
+    const ax = L.cs * 0.45;
+    ctx.beginPath();
+    ctx.moveTo(L.jx + 8, y); ctx.lineTo(L.jx + 8 + ax, y - ax * 0.7); ctx.lineTo(L.jx + 8 + ax, y + ax * 0.7); ctx.closePath();
+    ctx.moveTo(L.jx + L.jw - 8, y); ctx.lineTo(L.jx + L.jw - 8 - ax, y - ax * 0.7); ctx.lineTo(L.jx + L.jw - 8 - ax, y + ax * 0.7); ctx.closePath();
+    ctx.fill();
+    ctx.restore();
   }
 
   function jarClip() {
@@ -409,12 +486,34 @@
     ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
   }
 
-  function drawHud() {
+  const kfmt = v => v >= 1e6 ? (v / 1e6) + 'M' : v >= 1000 ? (v / 1000) + 'K' : String(v);
+  function drawHud(now) {
+    // 分数滚着往上涨，不是一下跳过去
+    const dt = Math.min(0.1, Math.max(0, now - lastHudNow)); lastHudNow = now;
+    shownScore += (st.score - shownScore) * Math.min(1, dt * 10);
+    if (Math.abs(st.score - shownScore) < 1) shownScore = st.score;
+    // 过了里程碑：金色大字、整屏闪金色
+    while (mileIdx < MILESTONES.length && st.score >= MILESTONES[mileIdx]) {
+      addPopup({ text: kfmt(MILESTONES[mileIdx]) + '!', sub: 'Milestone', x: L.vw / 2, y: L.jy + L.cs * 3.4, t0: now, c: '#D9A21B' });
+      bgFlash = { c: '#F2C230', t0: now, k: 0.8 };
+      mileIdx++;
+    }
     ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
     ctx.fillStyle = '#3B2F25'; ctx.font = '800 34px -apple-system, BlinkMacSystemFont, sans-serif';
-    ctx.fillText(st.score.toLocaleString('en-US'), L.vw / 2, L.top + 44);
-    ctx.fillStyle = '#9A8670'; ctx.font = '600 13px -apple-system, BlinkMacSystemFont, sans-serif';
-    ctx.fillText('BEST ' + Math.max(best, st.score).toLocaleString('en-US'), L.vw / 2, L.top + 62);
+    ctx.fillText(Math.round(shownScore).toLocaleString('en-US'), L.vw / 2, L.top + 42);
+    ctx.fillStyle = '#9A8670'; ctx.font = '600 12px -apple-system, BlinkMacSystemFont, sans-serif';
+    ctx.fillText('BEST ' + Math.max(best, st.score).toLocaleString('en-US'), L.vw / 2, L.top + 58);
+    // 下一个里程碑：一条细进度条，右边写着目标
+    if (mileIdx < MILESTONES.length) {
+      const prev = mileIdx ? MILESTONES[mileIdx - 1] : 0, next = MILESTONES[mileIdx];
+      const f = Math.max(0, Math.min(1, (shownScore - prev) / (next - prev)));
+      const bw = Math.min(140, L.jw * 0.42), bh = 7, bx = L.vw / 2 - bw / 2, by = L.top + 66;
+      ctx.fillStyle = 'rgba(122,101,80,0.18)'; roundRect(bx, by, bw, bh, 3.5); ctx.fill();
+      if (f > 0) { ctx.fillStyle = '#E2A72A'; roundRect(bx, by, Math.max(bh, bw * f), bh, 3.5); ctx.fill(); }
+      ctx.textAlign = 'left'; ctx.fillStyle = '#9A8670'; ctx.font = '800 11px -apple-system, BlinkMacSystemFont, sans-serif';
+      ctx.fillText(kfmt(next), bx + bw + 6, by + bh);
+      ctx.textAlign = 'center';
+    }
     // 现在有几种颜色
     const n = S.colorsAt(st.placed), d = 9;
     for (let c = 1; c <= n; c++) {
@@ -435,6 +534,7 @@
     for (let moved = true, n = 0; moved && n < 6; n++) {
       moved = false;
       for (const q of popups) {
+        if (!q.small !== !p.small) continue;
         const qy = q.y - 40 * Math.min(1, (p.t0 - q.t0) / 1.1);   // q 此刻已经飘到的高度
         if (p.t0 - q.t0 < 0.9 && Math.abs(p.x - q.x) < 170 && Math.abs(p.y - qy) < 48) { p.y = qy - 50; moved = true; }
       }
@@ -448,6 +548,13 @@
     for (const p of popups) {
       const t = (now - p.t0) / 1.1, y = p.y - 40 * t;
       ctx.globalAlpha = t < 0.7 ? 1 : 1 - (t - 0.7) / 0.3;
+      if (p.small) {   // 放一块的飘分：小、灰、不抢眼
+        ctx.font = '800 16px -apple-system, BlinkMacSystemFont, sans-serif';
+        ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(255,255,255,0.85)'; ctx.strokeText(p.text, p.x, y);
+        ctx.fillStyle = p.c; ctx.fillText(p.text, p.x, y);
+        ctx.globalAlpha = 1;
+        continue;
+      }
       ctx.font = '900 30px -apple-system, BlinkMacSystemFont, sans-serif';
       ctx.lineWidth = 6; ctx.strokeStyle = '#fff'; ctx.strokeText(p.text, p.x, y);
       ctx.fillStyle = p.c; ctx.fillText(p.text, p.x, y);
@@ -479,6 +586,17 @@
 
   function draw(now) {
     ctx.fillStyle = BG; ctx.fillRect(0, 0, L.vw, L.vh);
+    if (bgFlash) {   // 整屏闪成被消的颜色，0.7 秒淡回去
+      const t = (now - bgFlash.t0) / 0.7;
+      if (t >= 1) bgFlash = null;
+      else { ctx.globalAlpha = bgFlash.k * 0.6 * (1 - t) * (1 - t); ctx.fillStyle = bgFlash.c; ctx.fillRect(0, 0, L.vw, L.vh); ctx.globalAlpha = 1; }
+    }
+    ctx.save();
+    if (shake) {     // 震一下：幅度随连击变大，0.3 秒停下
+      const t = (now - shake.t0) / 0.3;
+      if (t >= 1) shake = null;
+      else { const a = shake.amp * (1 - t); ctx.translate(Math.sin(now * 91.7) * a, Math.cos(now * 77.3) * a); }
+    }
     drawJar(now, false);
     // 沙子只画在瓶身里：瓶底两个角是圆的，不裁会露到玻璃外面
     ctx.save(); jarClip(); ctx.clip();
@@ -488,9 +606,13 @@
     drawJar(now, true);
     drawHints(now);
     drawGhost(now);
+    drawSparks(now);
+    ctx.restore();
     drawTray();
     drawDrag();
-    drawHud();
+    drawHud(now);
+    drawRuleLine(now);
+    drawComboBanner(now);
     drawPopups(now);
     drawHand(now);
     if (REC) drawFinger();

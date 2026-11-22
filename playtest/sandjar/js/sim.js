@@ -5,7 +5,9 @@
   'use strict';
 
   const CELL = 8;              // 每格 8×8 粒沙
-  const COLS = 8, ROWS = 10;   // 瓶身：宽 8 格、高 10 格（瓶口线以下）
+  // 瓶身：宽 8 格、高 10 格（瓶口线以下）。机器人调参时可以用环境变量 SAND_COLS / SAND_ROWS 临时改，浏览器里永远是这两个数
+  const ENV = typeof process !== 'undefined' && process.env ? process.env : {};
+  const COLS = +ENV.SAND_COLS || 8, ROWS = +ENV.SAND_ROWS || 10;
   const HEAD = 4;              // 瓶口线以上留 4 格，块从这里落下（最高的块正好 4 格）
   const W = COLS * CELL, H = (ROWS + HEAD) * CELL;
   const RIM = HEAD * CELL;     // 瓶口线所在的行：沙子停稳以后还有一粒在这行以上就输
@@ -22,7 +24,8 @@
     drought: 8,          // 一种颜色连续这么多块没发，下一块就一定是它
     comboWindow: 2,      // 消完以后，接下来几块之内再消算连击
     comboMax: 5,
-    ptsPerCell: 10,      // 一格的沙量（64 粒）10 分
+    ptsPerPlacedCell: 10,  // 放下一块：每格 10 分（四格的块 +40）
+    ptsPerGrain: 1,        // 消除：每粒 1 分，再乘连击倍数（一层大约几百粒）。2026-11-23 学 Sand Blast 把数字放大
     settleTicks: 6,      // 停了这么多 tick 才算「停稳」，这时判输
     hintSpan: 0.6,       // 碰到一边墙、横跨超过瓶宽这么多的一片同色沙，给提示
   };
@@ -263,7 +266,7 @@
     for (const k of clear) { for (const i of k.cells) g[i] = 0; n += k.cells.length; }
     if (st.clears > 0 && st.sinceClear <= CFG.comboWindow) st.combo = Math.min(CFG.comboMax, st.combo + 1);
     else st.combo = 1;
-    const pts = Math.round(n / (CELL * CELL) * CFG.ptsPerCell) * st.combo;
+    const pts = n * CFG.ptsPerGrain * st.combo;
     st.score += pts; st.clears++; st.sinceClear = 0;
     st.moving = true;
     st.events.push({ type: 'clear', n, pts, combo: st.combo, parts: clear.map(k => ({ c: k.c, cells: k.cells })) });
@@ -284,7 +287,9 @@
           if (blockedBelow(st, f)) {
             toGrains(st, f);
             f.landed = true; landed++;
-            st.events.push({ type: 'land', s: f.s, c: f.c, x: f.x, y: f.y });
+            const pts = SHAPES[f.s].cells.length * CFG.ptsPerPlacedCell;
+            st.score += pts;
+            st.events.push({ type: 'land', s: f.s, c: f.c, x: f.x, y: f.y, pts });
             changed = true; st.moving = true;
             break;
           }
