@@ -494,7 +494,7 @@
     if (Math.abs(st.score - shownScore) < 1) shownScore = st.score;
     // 过了里程碑：金色大字、整屏闪金色
     while (mileIdx < MILESTONES.length && st.score >= MILESTONES[mileIdx]) {
-      addPopup({ text: kfmt(MILESTONES[mileIdx]) + '!', sub: 'Milestone', x: L.vw / 2, y: L.jy + L.cs * 3.4, t0: now, c: '#D9A21B' });
+      addPopup({ text: kfmt(MILESTONES[mileIdx]) + '!', sub: 'Milestone', x: L.vw / 2, y: L.rimY + L.cs * 2.8, t0: now, c: '#D9A21B' });   // 瓶子上半截，跟瓶口上方的 COMBO 大字错开
       bgFlash = { c: '#F2C230', t0: now, k: 0.8 };
       mileIdx++;
     }
