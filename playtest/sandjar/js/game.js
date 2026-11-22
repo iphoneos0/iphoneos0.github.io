@@ -7,27 +7,52 @@
 
   // 6 种沙色：从 Okabe-Ito 色盲友好色板挑的，按上场顺序。第 2 周正式定色前还要过色弱模拟（docs/02 第三节）
   const COLORS = [null, '#E4572E', '#4BA3E3', '#F2C230', '#21A07A', '#C66FB0', '#2E5AA8'];
-  const SHADE = [0.94, 0.98, 1.02, 1.06];   // 每粒沙的明暗只差 ±5%，不然薄薄一条看不出接没接通
   const WORDS = ['Nice!', 'Great!', 'Excellent!', 'Amazing!', 'Unbelievable!'];
   const BG = '#EFE4D2';
 
   const rgb = hex => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
-  const PAL = new Uint32Array(7 * 4), PAL_HI = new Uint32Array(7 * 4);
-  const pack = (r, g, b) => (255 << 24) | (Math.min(255, b) << 16) | (Math.min(255, g) << 8) | Math.min(255, r);
-  for (let c = 1; c <= 6; c++) {
-    const [r, g, b] = rgb(COLORS[c]);
-    for (let s = 0; s < 4; s++) {
-      const k = SHADE[s];
-      PAL[c * 4 + s] = pack(r * k | 0, g * k | 0, b * k | 0);
-      // 提示时亮一点：只往白色混 35%，混太多会被看成另一种颜色
-      PAL_HI[c * 4 + s] = pack(r * k * 0.65 + 89 | 0, g * k * 0.65 + 89 | 0, b * k * 0.65 + 89 | 0);
+  const pack = (r, g, b) => (255 << 24) | (Math.max(0, Math.min(255, b | 0)) << 16) | (Math.max(0, Math.min(255, g | 0)) << 8) | Math.max(0, Math.min(255, r | 0));
+  const BASE = COLORS.map(h => h ? pack(...rgb(h)) : 0);
+
+  // 沙粒质感（docs/04：5px 的平色块不像沙）。模拟还是每格 8×8 粒；画的时候每粒再分成 K×K 个小点。
+  // 每粒沙带着 16 种花纹里的一种（sim 里的 shade，跟着沙粒走），沙子流动时纹理跟着走，不会像隔着一层纱窗。
+  // 明暗：每种花纹整体差 ±9%，小点之间再差 ±5%，少数花纹带一个亮点或暗点；色相也轻轻偏暖偏冷。
+  // 颜色之间靠色相区分，明暗变化再大，薄薄一条接没接通也看得出来（截图看过）。
+  const K = 3, VAR = 16, KK = K * K;
+  const TILE = new Uint32Array(7 * VAR * KK), TILE_HI = new Uint32Array(7 * VAR * KK);
+  {
+    let a = 20261122;
+    const r01 = () => { a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+    for (let v = 0; v < VAR; v++) {
+      const base = (v / (VAR - 1) - 0.5) * 0.18, warm = (r01() - 0.5) * 0.06;
+      const dots = [];
+      for (let j = 0; j < KK; j++) dots.push(base + (r01() - 0.5) * 0.10);
+      if (v % 6 === 1) dots[(r01() * KK) | 0] += 0.20;   // 亮点：沙子里反光的石英
+      if (v % 5 === 3) dots[(r01() * KK) | 0] -= 0.16;   // 暗点
+      for (let c = 1; c <= 6; c++) {
+        const [r, g, b] = rgb(COLORS[c]);
+        for (let j = 0; j < KK; j++) {
+          const k = 1 + dots[j], o = (c * VAR + v) * KK + j;
+          const R = r * k * (1 + warm), G = g * k, B = b * k * (1 - warm);
+          TILE[o] = pack(R, G, B);
+          // 提示时亮一点：只往白色混 35%，混太多会被看成另一种颜色
+          TILE_HI[o] = pack(R * 0.65 + 89, G * 0.65 + 89, B * 0.65 + 89);
+        }
+      }
     }
   }
 
+  // 网址参数：?rec 是录短视频用的模式（tools/rec/，虚拟时钟、不弹结果页、不显示声音按钮）；?seed=N 固定种子
+  const Q = new URLSearchParams(location.search);
+  const REC = Q.has('rec'), SEED = Q.has('seed') ? (+Q.get('seed') >>> 0) : null;
+
   const cv = document.getElementById('cv'), ctx = cv.getContext('2d');
-  const off = document.createElement('canvas'); off.width = W; off.height = H;
+  const KW = W * K;
+  const off = document.createElement('canvas'); off.width = KW; off.height = H * K;
   const octx = off.getContext('2d');
-  const img = octx.createImageData(W, H), px = new Uint32Array(img.data.buffer);
+  const img = octx.createImageData(KW, H * K), px = new Uint32Array(img.data.buffer);
+  const hiMask = new Uint8Array(W * H);
+  let grainsDirty = true, lastHintOn = false;   // 沙子没动、提示没换的时候不重算沙子图
 
   const store = {
     get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : v; } catch (e) { return d; } },
@@ -70,15 +95,19 @@
   let best = +store.get('sand1-best', 0) || 0;
 
   function start() {
-    const tutorial = store.get('sand1-tut', '0') !== '1';
-    st = S.create((Date.now() ^ (Math.random() * 1e9)) >>> 0, { tutorial });
+    const tutorial = REC ? Q.has('tut') : store.get('sand1-tut', '0') !== '1';
+    st = S.create(SEED != null ? SEED : (Date.now() ^ (Math.random() * 1e9)) >>> 0, { tutorial });
+    grainsDirty = true;
     st.events.length = 0;
     drag = null; popups = []; flashes = []; overAt = 0; lastColors = S.CFG.start; tutFirstX = -1;
     run = { at: new Date().toISOString(), t0: performance.now(), firstClear: null, tutorial };
     document.getElementById('over').classList.add('hide');
   }
 
+  const recEvents = [];   // 录制模式下记下每次消除、加色、结束的时间，给剪视频的人找高光
   function onEvent(e, now) {
+    grainsDirty = true;
+    if (REC && e.type !== 'land') recEvents.push({ t: +now.toFixed(2), type: e.type, combo: e.combo, pts: e.pts, colors: e.colors });
     if (e.type === 'land') {
       Snd.land(S.SHAPES[e.s].cells.length); haptic('light');
       if (st.tutorial && tutFirstX < 0) tutFirstX = e.x;
@@ -101,12 +130,13 @@
     } else if (e.type === 'over') {
       overAt = now; Snd.over(); haptic('heavy');
       finishRun();
-      setTimeout(showOver, 700);
+      if (!REC) setTimeout(showOver, 700);
     }
   }
 
   function tick(now) {
     S.step(st);
+    if (st.moving || st.falling.length) grainsDirty = true;
     for (const e of st.events) onEvent(e, now);
     st.events.length = 0;
   }
@@ -199,7 +229,7 @@
     drag.pv = { col: drag.col, set, tick: st.tick, r };
     drag.glow = !!(r && r.clear);
     if (r) {
-      const c = PAL[st.tray[drag.slot].c * 4 + 1];
+      const c = BASE[st.tray[drag.slot].c];
       for (let i = 0; i < W * H; i++) gpx[i] = r.mask[i] ? c : 0;
       gctx.putImageData(gimg, 0, 0);
     }
@@ -260,19 +290,34 @@
   }
 
   function drawGrains(now) {
-    const g = st.grid, sd = st.shade;
-    for (let i = 0; i < W * H; i++) px[i] = g[i] ? PAL[g[i] * 4 + sd[i]] : 0;
     // 快接通的那片沙一闪一闪地发亮（docs/02 第一节：规则自己会说话）
-    const pulse = (Math.sin(now * 6) + 1) / 2;
-    if (pulse > 0.35 && !st.over) for (const h of st.hints) for (const i of h.cells) if (g[i]) px[i] = PAL_HI[g[i] * 4 + sd[i]];
-    // 刚消掉的位置白光一闪
+    const hintOn = !st.over && st.hints.length > 0 && (Math.sin(now * 6) + 1) / 2 > 0.35;
     flashes = flashes.filter(f => now - f.t0 < 0.25);
-    for (const f of flashes) {
-      const a = 1 - (now - f.t0) / 0.25;
-      const wv = pack(255, 255, 255) & 0x00FFFFFF | ((a * 255) << 24);
-      for (const i of f.cells) if (!g[i]) px[i] = wv;
+    if (grainsDirty || hintOn !== lastHintOn || flashes.length) {
+      grainsDirty = false; lastHintOn = hintOn;
+      const g = st.grid, sd = st.shade;
+      if (hintOn) { hiMask.fill(0); for (const h of st.hints) for (const i of h.cells) hiMask[i] = 1; }
+      for (let y = 0, i = 0; y < H; y++) {
+        for (let x = 0; x < W; x++, i++) {
+          let o = y * K * KW + x * K;
+          const c = g[i];
+          if (!c) { for (let a = 0; a < K; a++, o += KW) for (let b = 0; b < K; b++) px[o + b] = 0; continue; }
+          const T = hintOn && hiMask[i] ? TILE_HI : TILE;
+          let t = (c * VAR + sd[i]) * KK;
+          for (let a = 0; a < K; a++, o += KW) for (let b = 0; b < K; b++) px[o + b] = T[t++];
+        }
+      }
+      // 刚消掉的位置白光一闪
+      for (const f of flashes) {
+        const wv = (0x00FFFFFF | (((1 - (now - f.t0) / 0.25) * 255) << 24)) >>> 0;
+        for (const i of f.cells) {
+          if (g[i]) continue;
+          let o = ((i / W) | 0) * K * KW + (i % W) * K;
+          for (let a = 0; a < K; a++, o += KW) for (let b = 0; b < K; b++) px[o + b] = wv;
+        }
+      }
+      octx.putImageData(img, 0, 0);
     }
-    octx.putImageData(img, 0, 0);
     ctx.imageSmoothingEnabled = false;
     ctx.drawImage(off, L.jx, L.jy, L.jw, L.jh);
   }
@@ -376,7 +421,8 @@
       ctx.fillStyle = COLORS[c];
       ctx.beginPath(); ctx.arc(L.jx + 6 + (c - 1) * (d + 5), L.top + 40, d / 2, 0, 7); ctx.fill();
     }
-    // 声音开关
+    // 声音开关（录视频时不画）
+    if (REC) return;
     const s = L.snd;
     ctx.fillStyle = Snd.on ? '#7A6550' : '#C2B39E';
     ctx.font = '22px -apple-system, sans-serif';
@@ -435,25 +481,40 @@
     drawHud();
     drawPopups(now);
     drawHand(now);
+    if (REC) drawFinger();
+  }
+
+  // 录视频时没有真手指：拖的时候画一个半透明的圆点
+  function drawFinger() {
+    if (!drag) return;
+    ctx.save();
+    ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.strokeStyle = 'rgba(90,70,50,0.35)'; ctx.lineWidth = 2;
+    ctx.shadowColor = 'rgba(0,0,0,0.25)'; ctx.shadowBlur = 8;
+    ctx.beginPath(); ctx.arc(drag.x, drag.y, L.cs * 0.55, 0, 7); ctx.fill(); ctx.shadowBlur = 0; ctx.stroke();
+    ctx.restore();
   }
 
   // ---------- 主循环：固定步长 1/60 秒，跟帧率无关 ----------
   let last = performance.now(), acc = 0;
-  function frame(t) {
-    requestAnimationFrame(frame);
-    let dt = (t - last) / 1000; last = t;
+  function advance(dt, now) {
     if (dt > 0.1) dt = 0.1;
     acc += dt;
-    const now = t / 1000;
     let n = 0;
     while (acc >= 1 / 60 && n < 6) { tick(now); acc -= 1 / 60; n++; }
     draw(now);
+  }
+  function frame(t) {
+    requestAnimationFrame(frame);
+    const dt = (t - last) / 1000; last = t;
+    advance(dt, t / 1000);
   }
 
   window.addEventListener('resize', layout);
   layout();
   start();
-  requestAnimationFrame(frame);
+  // 录制模式不跟屏幕刷新走：录像脚本每帧调用 SAND.advance(1/30)，时间是假的，录出来一帧不差
+  let vnow = 0;
+  if (!REC) requestAnimationFrame(frame);
 
   // 调试用：面板藏起来时动画帧不走，用 SAND.tick(n) 推进
   window.SAND = {
@@ -462,5 +523,8 @@
     tick(n) { const now = performance.now() / 1000; for (let i = 0; i < (n || 1); i++) tick(now); draw(now); },
     drop(slot, col) { return S.drop(st, slot, col); },
     restart: start,
+    get L() { return L; },
+    advance(dt) { vnow += dt; advance(dt, vnow); },
+    recEvents,
   };
 })();

@@ -70,7 +70,7 @@
     const st = {
       seed, rs: (seed ^ 0x9E3779B9) | 0, rd: (seed ^ 0x85EBCA6B) | 0,
       grid: new Uint8Array(W * H),     // 每粒沙的颜色，0 = 空
-      shade: new Uint8Array(W * H),    // 每粒沙的明暗（0–3），只给画面用
+      shade: new Uint8Array(W * H),    // 每粒沙的花纹（0–15），跟着沙粒走，只给画面用
       slid: new Uint8Array(W * H),     // 每粒沙已经斜滑了几次（slideBudget 用）
       tray: [null, null, null], falling: [],
       placed: 0, dealt: 0, lastSeen: [0, 0, 0, 0, 0, 0, 0],
@@ -172,7 +172,7 @@
           while (y >= 0 && g[y * W + x]) y--;
           if (y < 0) continue;
           const i = y * W + x;
-          g[i] = f.c; sd[i] = (rnd(st, 'rs') * 4) | 0; st.slid[i] = 0;
+          g[i] = f.c; sd[i] = (rnd(st, 'rs') * 16) | 0; st.slid[i] = 0;
           if (y < top) top = y;
         }
       }
