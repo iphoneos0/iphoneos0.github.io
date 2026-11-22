@@ -118,14 +118,14 @@
       let sx = 0, sy = 0;
       for (let k = 0; k < cells.length; k += 7) { sx += cells[k] % W; sy += (cells[k] / W) | 0; }
       const m = Math.ceil(cells.length / 7);
-      popups.push({ text: WORDS[e.combo - 1], sub: '+' + e.pts, x: L.jx + sx / m * L.gp, y: L.jy + sy / m * L.gp, t0: now, c: COLORS[e.parts[0].c] });
+      addPopup({ text: WORDS[e.combo - 1], sub: '+' + e.pts, x: L.jx + sx / m * L.gp, y: L.jy + sy / m * L.gp, t0: now, c: COLORS[e.parts[0].c] });
       Snd.clear(e.combo); haptic(e.combo > 1 ? 'heavy' : 'medium');
       if (run.firstClear == null) run.firstClear = +((performance.now() - run.t0) / 1000).toFixed(1);
       if (st.tutorial) store.set('sand1-tut', '1');
     } else if (e.type === 'deal') {
       if (e.colors && e.colors > lastColors) {
         lastColors = e.colors;
-        popups.push({ text: 'New color!', sub: '', x: L.vw / 2, y: L.trayY - 10, t0: now, c: COLORS[e.colors] });
+        addPopup({ text: 'New color!', sub: '', x: L.vw / 2, y: L.trayY - 10, t0: now, c: COLORS[e.colors] });
       }
     } else if (e.type === 'over') {
       overAt = now; Snd.over(); haptic('heavy');
@@ -428,6 +428,18 @@
     ctx.font = '22px -apple-system, sans-serif';
     ctx.fillText(Snd.on ? '♪' : '♪̸', s.x + s.w / 2, s.y + 26);
     if (!Snd.on) { ctx.strokeStyle = '#C2B39E'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(s.x + 8, s.y + 8); ctx.lineTo(s.x + s.w - 8, s.y + s.h - 8); ctx.stroke(); }
+  }
+
+  // 同时冒出来的字不叠在一起：跟还没飘走的字挨得太近，就往上挪一行（两次消除同一瞬间、消除又赶上加色时会这样）
+  function addPopup(p) {
+    for (let moved = true, n = 0; moved && n < 6; n++) {
+      moved = false;
+      for (const q of popups) {
+        const qy = q.y - 40 * Math.min(1, (p.t0 - q.t0) / 1.1);   // q 此刻已经飘到的高度
+        if (p.t0 - q.t0 < 0.9 && Math.abs(p.x - q.x) < 170 && Math.abs(p.y - qy) < 48) { p.y = qy - 50; moved = true; }
+      }
+    }
+    popups.push(p);
   }
 
   function drawPopups(now) {
