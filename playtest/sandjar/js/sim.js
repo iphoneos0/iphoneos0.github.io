@@ -124,8 +124,17 @@
     col = clampCol(p.s, col);
     st.tray[slot] = null;
     st.placed++; st.sinceClear++;
-    const y = y0 > 0 ? Math.min(y0 | 0, landingY(st, p.s, col)) : 0;
-    st.falling.push({ s: p.s, c: p.c, x: col * CELL, y });
+    let y = y0 > 0 ? Math.min(y0 | 0, landingY(st, p.s, col)) : 0;
+    // 不能跟还在空中的块叠在一起（叠了，先落地的那块占了格子，另一块落地时就会丢沙）：叠上了就放到那块正上方
+    const x = col * CELL, sw = SHAPES[p.s].w * CELL, sh = SHAPES[p.s].h * CELL;
+    for (let again = true, n = 0; again && n < 4; n++) {
+      again = false;
+      for (const o of st.falling) {
+        const ow = SHAPES[o.s].w * CELL, oh = SHAPES[o.s].h * CELL;
+        if (x < o.x + ow && o.x < x + sw && y < o.y + oh && o.y < y + sh) { y = o.y - sh; again = true; }
+      }
+    }
+    st.falling.push({ s: p.s, c: p.c, x, y });
     st.still = 0;
     if (!st.tray[0] && !st.tray[1] && !st.tray[2]) deal(st);
     return true;
@@ -148,20 +157,27 @@
     return f.y;
   }
 
+  // 块落地变成沙。块在空中时还在流的沙可能已经流进了它占的格子：那一粒就往上挪到这一列最近的空格，
+  // 一粒都不丢（只有瓶子满到顶才会丢）。从下往上放，挪上去的沙不会被同一块后面的沙盖掉
   function toGrains(st, f) {
     const sh = SHAPES[f.s], g = st.grid, sd = st.shade;
-    for (const [cx, cy] of sh.cells) {
-      for (let dy = 0; dy < CELL; dy++) {
-        const y = f.y + cy * CELL + dy;
-        if (y < 0 || y >= H) continue;
+    let top = st.top;
+    for (let ry = sh.h * CELL - 1; ry >= 0; ry--) {
+      const cy = (ry / CELL) | 0;
+      for (const [cx, cyy] of sh.cells) {
+        if (cyy !== cy) continue;
         for (let dx = 0; dx < CELL; dx++) {
-          const i = y * W + f.x + cx * CELL + dx;
-          if (g[i]) continue;
+          const x = f.x + cx * CELL + dx;
+          let y = Math.min(f.y + ry, H - 1);
+          while (y >= 0 && g[y * W + x]) y--;
+          if (y < 0) continue;
+          const i = y * W + x;
           g[i] = f.c; sd[i] = (rnd(st, 'rs') * 4) | 0; st.slid[i] = 0;
+          if (y < top) top = y;
         }
       }
     }
-    if (f.y < st.top) st.top = f.y;
+    st.top = top;
   }
 
   // 沙子走一步：从下往上扫，每粒先往下；下面堵住了，就随机先试左下或右下。每行扫的方向轮换，免得偏向一边
@@ -219,6 +235,7 @@
   }
 
   function detect(st) {
+    if (st.dry) return;   // 预览用的副本：只看沙子落到哪，不消
     stamp++;
     const g = st.grid, clear = [], hints = [];
     let reach = 0;
@@ -258,18 +275,23 @@
     if (st.over) return;
     st.tick++;
     let changed = false;
-    for (let i = st.falling.length - 1; i >= 0; i--) {
-      const f = st.falling[i];
-      for (let k = 0; k < CFG.fallRows; k++) {
-        if (blockedBelow(st, f)) {
-          toGrains(st, f);
-          st.falling.splice(i, 1);
-          st.events.push({ type: 'land', s: f.s, c: f.c, x: f.x, y: f.y });
-          changed = true; st.moving = true;
-          break;
+    if (st.falling.length) {
+      // 从最低的块开始走：下面的块先落地变成沙，上面的块才看得见它，两块就不会叠进彼此
+      const order = st.falling.slice().sort((a, b) => (b.y + SHAPES[b.s].h * CELL) - (a.y + SHAPES[a.s].h * CELL));
+      let landed = 0;
+      for (const f of order) {
+        for (let k = 0; k < CFG.fallRows; k++) {
+          if (blockedBelow(st, f)) {
+            toGrains(st, f);
+            f.landed = true; landed++;
+            st.events.push({ type: 'land', s: f.s, c: f.c, x: f.x, y: f.y });
+            changed = true; st.moving = true;
+            break;
+          }
+          f.y++;
         }
-        f.y++;
       }
+      if (landed) st.falling = st.falling.filter(f => !f.landed);
     }
     if (st.moving) {
       let moves = 0;
@@ -308,9 +330,28 @@
     return c.clears > before;
   }
 
+  // 拖块时的预览：这一块放在这一列，落稳以后它的沙子在哪些格（先不消），以及落稳后会不会消掉一片。
+  // 在副本上跑，块的沙子临时用第 7 种「颜色」做记号，跑完换回真颜色再判一次消除
+  const MARK = 7;
+  function preview(st, slot, col, maxTicks) {
+    const p = st.tray[slot];
+    if (!p || st.over) return null;
+    const c = clone(st);
+    c.dry = true;
+    c.tray[slot] = { s: p.s, c: MARK };
+    if (!drop(c, slot, col)) return null;
+    for (let t = 0; t < (maxTicks || 300) && !settled(c); t++) step(c);
+    const mask = new Uint8Array(W * H);
+    for (let i = 0; i < W * H; i++) if (c.grid[i] === MARK) { mask[i] = 1; c.grid[i] = p.c; }
+    c.dry = false; c.over = false;
+    const before = c.clears;
+    findTop(c); detect(c);
+    return { mask, clear: c.clears > before };
+  }
+
   const api = {
     CELL, COLS, ROWS, HEAD, W, H, RIM, CFG, SHAPES,
-    create, step, drop, clone, colorsAt, landingY, clampCol, predictClear, settled, danger,
+    create, step, drop, clone, colorsAt, landingY, clampCol, predictClear, preview, settled, danger,
     shapeW: s => SHAPES[s].w, shapeH: s => SHAPES[s].h,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

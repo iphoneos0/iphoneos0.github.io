@@ -50,15 +50,18 @@
     cv.style.width = vw + 'px'; cv.style.height = vh + 'px';
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     const gameW = Math.min(vw, vh * 0.62);                  // 电脑上也是竖屏，居中
-    const hud = Math.max(70, vh * 0.1), tray = Math.max(120, vh * 0.2);
+    // 刘海/灵动岛和底部横条让开（进了全屏壳才不是 0）
+    const cssv = k => parseFloat(getComputedStyle(document.documentElement).getPropertyValue(k)) || 0;
+    const sat = cssv('--sat'), sab = cssv('--sab');
+    const hud = Math.max(70, vh * 0.1) + sat, tray = Math.max(120, vh * 0.2) + sab;
     const cs = Math.floor(Math.min((gameW - 36) / COLS, (vh - hud - tray - 10) / (ROWS + HEAD)));
     const jw = cs * COLS, jh = cs * (ROWS + HEAD);
     const jx = Math.round((vw - jw) / 2), jy = Math.round(hud);
-    const trayY = jy + jh + 14, trayH = vh - trayY - 10;
+    const trayY = jy + jh + 14, trayH = vh - trayY - 10 - sab;
     const sw = Math.min(gameW - 12, jw + 40) / 3, sx = (vw - sw * 3) / 2;
-    L = { vw, vh, cs, gp: cs / CELL, jx, jy, jw, jh, rimY: jy + HEAD * cs, trayY, trayH,
+    L = { vw, vh, top: sat, cs, gp: cs / CELL, jx, jy, jw, jh, rimY: jy + HEAD * cs, trayY, trayH,
       slots: [0, 1, 2].map(i => ({ x: sx + sw * i, y: trayY, w: sw, h: trayH })),
-      snd: { x: (vw + gameW) / 2 - 46, y: 14, w: 36, h: 36 } };
+      snd: { x: (vw + gameW) / 2 - 46, y: 14 + sat, w: 36, h: 36 } };
   }
 
   // ---------- 一局 ----------
@@ -181,9 +184,24 @@
     drag.top = drag.y - L.cs * 1.5 - h * L.cs;            // 块浮在手指上方 1.5 格，不被手指挡住
     drag.valid = drag.y < L.trayY - 6;                      // 拖回底盘就是取消
     const col = S.clampCol(p.s, Math.round((drag.left - L.jx) / L.cs));
-    if (col !== drag.col) {
-      drag.col = col;
-      drag.glow = drag.valid && S.predictClear(st, drag.slot, col, 240);
+    drag.col = col;   // 预览在 drawGhost 里按需重算
+  }
+
+  // 落点预览：在副本上把这一块放下去跑到停稳，画出它的沙子最后会在哪（docs/04：影子要说真话）。
+  // 换了列、沙子停稳/开始流的时候重算；沙子还在流就每 12 步重算一次
+  const goff = document.createElement('canvas'); goff.width = W; goff.height = H;
+  const gctx = goff.getContext('2d'), gimg = gctx.createImageData(W, H), gpx = new Uint32Array(gimg.data.buffer);
+  function refreshPreview() {
+    const set = S.settled(st);
+    const pv = drag.pv;
+    if (pv && pv.col === drag.col && pv.set === set && (set || st.tick - pv.tick < 12)) return;
+    const r = S.preview(st, drag.slot, drag.col, 240);
+    drag.pv = { col: drag.col, set, tick: st.tick, r };
+    drag.glow = !!(r && r.clear);
+    if (r) {
+      const c = PAL[st.tray[drag.slot].c * 4 + 1];
+      for (let i = 0; i < W * H; i++) gpx[i] = r.mask[i] ? c : 0;
+      gctx.putImageData(gimg, 0, 0);
     }
   }
 
@@ -241,17 +259,12 @@
     ctx.globalAlpha = 1;
   }
 
-  function outlinePiece(s, x, y, size) {
-    const sh = S.SHAPES[s];
-    for (const [cx, cy] of sh.cells) ctx.strokeRect(x + cx * size + 1, y + cy * size + 1, size - 2, size - 2);
-  }
-
   function drawGrains(now) {
     const g = st.grid, sd = st.shade;
     for (let i = 0; i < W * H; i++) px[i] = g[i] ? PAL[g[i] * 4 + sd[i]] : 0;
     // 快接通的那片沙一闪一闪地发亮（docs/02 第一节：规则自己会说话）
     const pulse = (Math.sin(now * 6) + 1) / 2;
-    if (pulse > 0.35) for (const h of st.hints) for (const i of h.cells) if (g[i]) px[i] = PAL_HI[g[i] * 4 + sd[i]];
+    if (pulse > 0.35 && !st.over) for (const h of st.hints) for (const i of h.cells) if (g[i]) px[i] = PAL_HI[g[i] * 4 + sd[i]];
     // 刚消掉的位置白光一闪
     flashes = flashes.filter(f => now - f.t0 < 0.25);
     for (const f of flashes) {
@@ -262,6 +275,12 @@
     octx.putImageData(img, 0, 0);
     ctx.imageSmoothingEnabled = false;
     ctx.drawImage(off, L.jx, L.jy, L.jw, L.jh);
+  }
+
+  function jarClip() {
+    const { jx, jw, jy, jh, cs } = L, bottom = jy + jh, r = cs * 0.7;
+    ctx.beginPath(); ctx.moveTo(jx, 0); ctx.lineTo(jx, bottom - r); ctx.quadraticCurveTo(jx, bottom, jx + r, bottom);
+    ctx.lineTo(jx + jw - r, bottom); ctx.quadraticCurveTo(jx + jw, bottom, jx + jw, bottom - r); ctx.lineTo(jx + jw, 0); ctx.closePath();
   }
 
   function drawJar(now, front) {
@@ -291,6 +310,7 @@
   }
 
   function drawHints(now) {
+    if (st.over) return;
     // 另一边墙上对应的位置亮成这片沙的颜色：告诉玩家「接到这边就消」
     const a = 0.45 + 0.55 * ((Math.sin(now * 6) + 1) / 2);
     for (const h of st.hints) {
@@ -309,20 +329,23 @@
   function drawGhost(now) {
     if (!drag || !drag.valid) return;
     const p = st.tray[drag.slot]; if (!p) return;
-    const ly = S.landingY(st, p.s, drag.col);
-    const x = L.jx + drag.col * L.cs, y = L.jy + ly * L.gp;
+    refreshPreview();
+    if (!drag.pv.r) return;
+    ctx.save(); jarClip(); ctx.clip();
+    ctx.imageSmoothingEnabled = false;
     if (drag.glow) {
-      const a = 0.35 + 0.35 * ((Math.sin(now * 9) + 1) / 2);
-      drawPiece(p.s, p.c, x, y, L.cs, a);
-      ctx.shadowColor = COLORS[p.c]; ctx.shadowBlur = 16; ctx.strokeStyle = '#fff'; ctx.lineWidth = 3;
-      outlinePiece(p.s, x, y, L.cs); ctx.shadowBlur = 0;
+      // 能消：沙形一亮一亮，带白色光晕
+      ctx.globalAlpha = 0.55 + 0.4 * ((Math.sin(now * 9) + 1) / 2);
+      ctx.shadowColor = '#fff'; ctx.shadowBlur = 14;
     } else {
-      drawPiece(p.s, p.c, x, y, L.cs, 0.22);
-      ctx.strokeStyle = 'rgba(255,255,255,0.9)'; ctx.lineWidth = 2; outlinePiece(p.s, x, y, L.cs);
+      ctx.globalAlpha = 0.42;
     }
+    ctx.drawImage(goff, L.jx, L.jy, L.jw, L.jh);
+    ctx.restore();
   }
 
   function drawTray() {
+    if (st.over) return;   // 结束了底盘让给结果卡片
     for (let i = 0; i < 3; i++) {
       const sl = L.slots[i], p = st.tray[i];
       if (!p) continue;
@@ -344,14 +367,14 @@
   function drawHud() {
     ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
     ctx.fillStyle = '#3B2F25'; ctx.font = '800 34px -apple-system, BlinkMacSystemFont, sans-serif';
-    ctx.fillText(st.score.toLocaleString('en-US'), L.vw / 2, 44);
+    ctx.fillText(st.score.toLocaleString('en-US'), L.vw / 2, L.top + 44);
     ctx.fillStyle = '#9A8670'; ctx.font = '600 13px -apple-system, BlinkMacSystemFont, sans-serif';
-    ctx.fillText('BEST ' + Math.max(best, st.score).toLocaleString('en-US'), L.vw / 2, 62);
+    ctx.fillText('BEST ' + Math.max(best, st.score).toLocaleString('en-US'), L.vw / 2, L.top + 62);
     // 现在有几种颜色
     const n = S.colorsAt(st.placed), d = 9;
     for (let c = 1; c <= n; c++) {
       ctx.fillStyle = COLORS[c];
-      ctx.beginPath(); ctx.arc(L.jx + 6 + (c - 1) * (d + 5), 40, d / 2, 0, 7); ctx.fill();
+      ctx.beginPath(); ctx.arc(L.jx + 6 + (c - 1) * (d + 5), L.top + 40, d / 2, 0, 7); ctx.fill();
     }
     // 声音开关
     const s = L.snd;
@@ -399,8 +422,11 @@
   function draw(now) {
     ctx.fillStyle = BG; ctx.fillRect(0, 0, L.vw, L.vh);
     drawJar(now, false);
+    // 沙子只画在瓶身里：瓶底两个角是圆的，不裁会露到玻璃外面
+    ctx.save(); jarClip(); ctx.clip();
     drawGrains(now);
     drawFalling();
+    ctx.restore();
     drawJar(now, true);
     drawHints(now);
     drawGhost(now);
