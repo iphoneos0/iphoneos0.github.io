@@ -5,10 +5,28 @@
   const S = window.SandSim;
   const { CELL, COLS, ROWS, HEAD, W, H, RIM } = S;
 
-  // 6 种沙色：从 Okabe-Ito 色盲友好色板挑的，按上场顺序。第 2 周正式定色前还要过色弱模拟（docs/02 第三节）
-  const COLORS = [null, '#E4572E', '#4BA3E3', '#F2C230', '#21A07A', '#C66FB0', '#2E5AA8'];
+  // 6 种沙色（2026-11-25 跟着 A「日落海边」换得更鲜艳，docs/07）：朱红、海蓝、金黄、翡翠绿、洋红紫、奶白沙。
+  // 过了红/绿/蓝色弱模拟：任意两色在三种色弱下的色差都不低于 15.9（最近的一对是蓝和绿，在少见的蓝色弱下）
+  const COLORS = [null, '#E5452F', '#2F8DE4', '#F6C433', '#23A86B', '#C94FB0', '#F4EEE2'];
   const WORDS = ['Nice!', 'Great!', 'Excellent!', 'Amazing!', 'Unbelievable!'];
-  const BG = '#EFE4D2';
+  // 字：iPhone 自带的圆体（SF Pro Rounded），胖、圆，配奶白填色和可可棕描边（A 图的样子）
+  const FONT = 'ui-rounded, "SF Pro Rounded", "Arial Rounded MT Bold", "Nunito", system-ui, sans-serif';
+  const font = (w, px) => w + ' ' + px + 'px ' + FONT;
+  const CREAM = '#FFF4E2', COCOA = '#4A2C1C';
+  // 颜色加深/变浅：k>1 往白混，k<1 往黑混
+  const shadeHex = (hex, k) => {
+    const [r, g, b] = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
+    const f = v => Math.round(k >= 1 ? v + (255 - v) * (k - 1) : v * k);
+    return 'rgb(' + f(r) + ',' + f(g) + ',' + f(b) + ')';
+  };
+
+  // 第 2 批美术素材（docs/07 第六节）。没加载到就用代码画的替身，游戏照样能玩
+  const IMG = {};
+  for (const n of ['bg_sky', 'sill', 'cork', 'shell', 'starfish', 'tray_base', 'btn_sound_on', 'btn_sound_off']) {
+    const im = new Image();
+    im.onload = () => { IMG[n] = im; grainsDirty = true; };
+    im.src = 'img/' + n + (n === 'bg_sky' || n === 'sill' ? '.jpg' : '.png');   // 背景和窗台不透明，用 jpg 省流量
+  }
 
   const rgb = hex => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
   const pack = (r, g, b) => (255 << 24) | (Math.max(0, Math.min(255, b | 0)) << 16) | (Math.max(0, Math.min(255, g | 0)) << 8) | Math.max(0, Math.min(255, r | 0));
@@ -20,6 +38,9 @@
   // 颜色之间靠色相区分，明暗变化再大，薄薄一条接没接通也看得出来（截图看过）。
   const K = 3, VAR = 16, KK = K * K;
   const TILE = new Uint32Array(7 * VAR * KK), TILE_HI = new Uint32Array(7 * VAR * KK);
+  // 沙面的光影（docs/07）：迎光的表面一层最亮，往下越深越暗，沙山看起来是立体的
+  const DEPTH_K = [1.16, 1.07, 1.0, 0.94, 0.88];
+  const TILE_L = DEPTH_K.map(() => new Uint32Array(7 * VAR * KK));
   {
     let a = 20261122;
     const r01 = () => { a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
@@ -35,6 +56,10 @@
           const k = 1 + dots[j], o = (c * VAR + v) * KK + j;
           const R = r * k * (1 + warm), G = g * k, B = b * k * (1 - warm);
           TILE[o] = pack(R, G, B);
+          for (let lv = 0; lv < DEPTH_K.length; lv++) {
+            const q = DEPTH_K[lv], up = q > 1;
+            TILE_L[lv][o] = up ? pack(R + (255 - R) * (q - 1), G + (255 - G) * (q - 1), B + (255 - B) * (q - 1)) : pack(R * q, G * q, B * q);
+          }
           // 提示时亮一点：只往白色混 35%，混太多会被看成另一种颜色
           TILE_HI[o] = pack(R * 0.65 + 89, G * 0.65 + 89, B * 0.65 + 89);
         }
@@ -51,7 +76,7 @@
   const off = document.createElement('canvas'); off.width = KW; off.height = H * K;
   const octx = off.getContext('2d');
   const img = octx.createImageData(KW, H * K), px = new Uint32Array(img.data.buffer);
-  const hiMask = new Uint8Array(W * H);
+  const hiMask = new Uint8Array(W * H), depthCol = new Int16Array(W);
   let grainsDirty = true, lastHintOn = false;   // 沙子没动、提示没换的时候不重算沙子图
 
   const store = {
@@ -117,7 +142,7 @@
     if (e.type === 'land') {
       Snd.land(S.SHAPES[e.s].cells.length); haptic('light');
       if (st.tutorial && tutFirstX < 0) tutFirstX = e.x;
-      addPopup({ text: '+' + e.pts, sub: '', x: L.jx + (e.x + S.shapeW(e.s) * CELL / 2) * L.gp, y: L.jy + e.y * L.gp, t0: now, c: '#8A7660', small: true });
+      addPopup({ text: '+' + e.pts, sub: '', x: L.jx + (e.x + S.shapeW(e.s) * CELL / 2) * L.gp, y: L.jy + e.y * L.gp, t0: now, c: CREAM, small: true });
     } else if (e.type === 'clear') {
       const cells = [], cols = [];
       for (const p of e.parts) for (const i of p.cells) { cells.push(i); cols.push(p.c); }
@@ -287,18 +312,24 @@
     ctx.lineTo(x, y + r); ctx.quadraticCurveTo(x, y, x + r, y); ctx.closePath();
   }
 
+  // 方块的颜色：亮面、本色、暗面、描边（按颜色缓存）
+  const PIECE_COL = COLORS.map(h => h && { hi: shadeHex(h, 1.38), mid: h, lo: shadeHex(h, 0.72), edge: shadeHex(h, 0.45) });
   function drawPiece(s, c, x, y, size, alpha) {
-    const sh = S.SHAPES[s];
+    const sh = S.SHAPES[s], P = PIECE_COL[c], r = size * 0.2, gap = Math.max(1, size * 0.05);
+    ctx.save();
     ctx.globalAlpha = alpha == null ? 1 : alpha;
     for (const [cx, cy] of sh.cells) {
-      ctx.fillStyle = COLORS[c];
-      ctx.fillRect(x + cx * size, y + cy * size, size, size);
-      ctx.fillStyle = 'rgba(255,255,255,0.18)';
-      ctx.fillRect(x + cx * size, y + cy * size, size, size * 0.18);
-      ctx.fillStyle = 'rgba(0,0,0,0.12)';
-      ctx.fillRect(x + cx * size, y + cy * size + size * 0.82, size, size * 0.18);
+      const px0 = x + cx * size + gap / 2, py0 = y + cy * size + gap / 2, sz = size - gap;
+      // 底色：上亮下暗的渐变，像一块糖
+      const g = ctx.createLinearGradient(0, py0, 0, py0 + sz);
+      g.addColorStop(0, P.hi); g.addColorStop(0.45, P.mid); g.addColorStop(1, P.lo);
+      ctx.fillStyle = g; roundRect(px0, py0, sz, sz, r); ctx.fill();
+      ctx.lineWidth = Math.max(1, size * 0.06); ctx.strokeStyle = P.edge; ctx.stroke();
+      // 左上一道高光
+      ctx.fillStyle = 'rgba(255,255,255,0.45)';
+      roundRect(px0 + sz * 0.16, py0 + sz * 0.12, sz * 0.5, sz * 0.14, sz * 0.07); ctx.fill();
     }
-    ctx.globalAlpha = 1;
+    ctx.restore();
   }
 
   function drawGrains(now) {
@@ -309,12 +340,14 @@
       grainsDirty = false; lastHintOn = hintOn;
       const g = st.grid, sd = st.shade;
       if (hintOn) { hiMask.fill(0); for (const h of st.hints) for (const i of h.cells) hiMask[i] = 1; }
+      depthCol.fill(0);
       for (let y = 0, i = 0; y < H; y++) {
         for (let x = 0; x < W; x++, i++) {
           let o = y * K * KW + x * K;
           const c = g[i];
-          if (!c) { for (let a = 0; a < K; a++, o += KW) for (let b = 0; b < K; b++) px[o + b] = 0; continue; }
-          const T = hintOn && hiMask[i] ? TILE_HI : TILE;
+          if (!c) { depthCol[x] = 0; for (let a = 0; a < K; a++, o += KW) for (let b = 0; b < K; b++) px[o + b] = 0; continue; }
+          const d = y > 0 && g[i - W] ? ++depthCol[x] : (depthCol[x] = 0);
+          const T = hintOn && hiMask[i] ? TILE_HI : TILE_L[d === 0 ? 0 : d <= 2 ? 1 : d <= 10 ? 2 : d <= 22 ? 3 : 4];
           let t = (c * VAR + sd[i]) * KK;
           for (let a = 0; a < K; a++, o += KW) for (let b = 0; b < K; b++) px[o + b] = T[t++];
         }
@@ -369,11 +402,13 @@
     const text = 'COMBO ×' + comboBanner.n, x = L.vw / 2, y = L.jy + L.cs * 2.2;
     ctx.save();
     ctx.globalAlpha = a; ctx.translate(x, y); ctx.scale(sc, sc);
-    ctx.font = '900 ' + Math.round(Math.min(46, L.jw / 7)) + 'px -apple-system, BlinkMacSystemFont, sans-serif';
+    ctx.font = font(900, Math.round(Math.min(50, L.jw / 6.5)));
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    const w = ctx.measureText(text).width, grad = ctx.createLinearGradient(-w / 2, 0, w / 2, 0);
-    for (let c = 1; c <= 6; c++) grad.addColorStop((c - 1) / 5, COLORS[c]);
-    ctx.lineWidth = 8; ctx.strokeStyle = '#fff'; ctx.lineJoin = 'round'; ctx.strokeText(text, 0, 0);
+    const fs = parseFloat(ctx.font), grad = ctx.createLinearGradient(0, -fs / 2, 0, fs / 2);
+    grad.addColorStop(0, '#FFFBF0'); grad.addColorStop(0.55, CREAM); grad.addColorStop(1, '#FFD27A');
+    ctx.shadowColor = 'rgba(255,170,60,0.9)'; ctx.shadowBlur = 18;
+    ctx.lineWidth = 10; ctx.strokeStyle = COCOA; ctx.lineJoin = 'round'; ctx.strokeText(text, 0, 0);
+    ctx.shadowBlur = 0;
     ctx.fillStyle = grad; ctx.fillText(text, 0, 0);
     ctx.restore();
   }
@@ -383,20 +418,57 @@
     if (!st.tutorial || st.clears || st.over) return;
     const text = 'Connect one color wall to wall';
     ctx.save();
-    let fs = 18;
-    ctx.font = '800 ' + fs + 'px -apple-system, BlinkMacSystemFont, sans-serif';
+    let fs = 19;
+    ctx.font = font(900, fs);
     const w = ctx.measureText(text).width, room = L.jw - 70;
-    if (w > room) { fs = Math.floor(fs * room / w); ctx.font = '800 ' + fs + 'px -apple-system, BlinkMacSystemFont, sans-serif'; }
+    if (w > room) { fs = Math.floor(fs * room / w); ctx.font = font(900, fs); }
     const y = L.rimY + L.cs * 1.7, a = 0.75 + 0.25 * Math.sin(now * 4);   // 瓶子里、瓶口线下面（教学手拖的块在瓶口上面，不会压住字）
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillStyle = '#6B5845'; ctx.globalAlpha = a; ctx.fillText(text, L.vw / 2, y);
+    ctx.globalAlpha = a; outlined(text, L.vw / 2, y, fs, 900, CREAM, COCOA, 4.5);
+    ctx.fillStyle = CREAM; ctx.strokeStyle = COCOA; ctx.lineWidth = 2;
     // 两头的箭头指着两边墙
     const ax = L.cs * 0.45;
     ctx.beginPath();
     ctx.moveTo(L.jx + 8, y); ctx.lineTo(L.jx + 8 + ax, y - ax * 0.7); ctx.lineTo(L.jx + 8 + ax, y + ax * 0.7); ctx.closePath();
     ctx.moveTo(L.jx + L.jw - 8, y); ctx.lineTo(L.jx + L.jw - 8 - ax, y - ax * 0.7); ctx.lineTo(L.jx + L.jw - 8 - ax, y + ax * 0.7); ctx.closePath();
-    ctx.fill();
+    ctx.stroke(); ctx.fill();
     ctx.restore();
+  }
+
+  // 背景：日落天空（bg_sky 铺满，没加载到就用渐变替身）
+  function drawBackdrop() {
+    const { vw, vh } = L, im = IMG.bg_sky;
+    if (im) {
+      const k = Math.max(vw / im.width, vh / im.height), w = im.width * k, h = im.height * k;
+      ctx.drawImage(im, (vw - w) / 2, (vh - h) / 2, w, h);
+    } else {
+      const g = ctx.createLinearGradient(0, 0, 0, vh);
+      g.addColorStop(0, '#F7A98F'); g.addColorStop(0.45, '#D98AA6'); g.addColorStop(0.75, '#8E6AA8'); g.addColorStop(1, '#5E4A86');
+      ctx.fillStyle = g; ctx.fillRect(0, 0, vw, vh);
+    }
+  }
+  // 窗台：瓶子和三个底座都放在上面。台面那条线对齐瓶底，不管屏幕多高
+  function sillTop() { return L.jy + L.jh + L.cs * 0.32; }
+  function drawSill() {
+    const { vw, vh } = L, top = sillTop(), im = IMG.sill;
+    if (im) {
+      // 宽度至少铺满屏幕；屏幕下面剩得多就按高度放大，左右裁掉一点，不露出平涂的底色
+      const face = im.height * 0.075;   // 台面中线在图里的位置（相对图高）
+      let k = vw / im.width;
+      const need = vh - top + face * k + 2;
+      if (im.height * k < need) k = need / im.height;
+      const w = im.width * k, h = im.height * k;
+      ctx.drawImage(im, (vw - w) / 2, top - face * k, w, h);
+    } else {
+      ctx.fillStyle = '#C98B57'; ctx.fillRect(0, top - L.cs * 0.25, vw, L.cs * 0.5);
+      const g = ctx.createLinearGradient(0, top + L.cs * 0.25, 0, vh);
+      g.addColorStop(0, '#9A5E36'); g.addColorStop(1, '#6A3D22');
+      ctx.fillStyle = g; ctx.fillRect(0, top + L.cs * 0.25, vw, vh);
+    }
+    // 软木塞和小贝壳：一个在瓶子右后方，一个在左边，一半藏在瓶子后面
+    const deco = (im, w, x) => { if (!im) return; const h = im.height * (w / im.width); ctx.drawImage(im, x, top - h * 0.72, w, h); };
+    deco(IMG.cork, L.cs * 1.9, L.jx + L.jw - L.cs * 0.6);
+    deco(IMG.shell, L.cs * 1.15, L.jx - L.cs * 0.75);
   }
 
   function jarClip() {
@@ -405,30 +477,61 @@
     ctx.lineTo(jx + jw - r, bottom); ctx.quadraticCurveTo(jx + jw, bottom, jx + jw, bottom - r); ctx.lineTo(jx + jw, 0); ctx.closePath();
   }
 
+  // 瓶子的外形：直壁、圆底角的宽口瓶，d 是往外扩多少（画玻璃厚度用）
+  function jarPath(d, topY) {
+    const { jx, jw, jy, jh, cs } = L, bottom = jy + jh + d, r = cs * 0.7 + d, x0 = jx - d, x1 = jx + jw + d;
+    ctx.beginPath(); ctx.moveTo(x0, topY); ctx.lineTo(x0, bottom - r); ctx.quadraticCurveTo(x0, bottom, x0 + r, bottom);
+    ctx.lineTo(x1 - r, bottom); ctx.quadraticCurveTo(x1, bottom, x1, bottom - r); ctx.lineTo(x1, topY); ctx.closePath();
+  }
   function drawJar(now, front) {
-    const { jx, jw, rimY, jy, jh, cs } = L, bottom = jy + jh, r = cs * 0.7;
+    const { jx, jw, rimY, jy, jh, cs } = L, bottom = jy + jh, t = Math.max(4, cs * 0.26);
     if (!front) {
-      ctx.fillStyle = 'rgba(255,255,255,0.45)';
-      ctx.beginPath(); ctx.moveTo(jx, rimY); ctx.lineTo(jx, bottom - r); ctx.quadraticCurveTo(jx, bottom, jx + r, bottom);
-      ctx.lineTo(jx + jw - r, bottom); ctx.quadraticCurveTo(jx + jw, bottom, jx + jw, bottom - r); ctx.lineTo(jx + jw, rimY); ctx.closePath(); ctx.fill();
+      // 瓶底在窗台上的投影
+      ctx.fillStyle = 'rgba(40,20,10,0.35)';
+      ctx.beginPath(); ctx.ellipse(jx + jw / 2, sillTop() + t * 0.3, jw / 2 + t * 2.2, t * 1.6, 0, 0, Math.PI * 2); ctx.fill();
+      // 玻璃本身：外壁一圈
+      jarPath(t, rimY);
+      const gw = ctx.createLinearGradient(jx - t, 0, jx + jw + t, 0);
+      gw.addColorStop(0, 'rgba(255,236,214,0.55)'); gw.addColorStop(0.5, 'rgba(255,236,214,0.18)'); gw.addColorStop(1, 'rgba(255,200,150,0.5)');
+      ctx.fillStyle = gw; ctx.fill();
+      // 瓶里：把背景压暗一点，沙子的颜色才跳得出来（docs/07：日落的粉紫会跟紫沙、红沙抢眼）
+      jarPath(0, rimY);
+      const gi = ctx.createLinearGradient(0, rimY, 0, bottom);
+      gi.addColorStop(0, 'rgba(70,36,52,0.16)'); gi.addColorStop(1, 'rgba(50,24,30,0.32)');
+      ctx.fillStyle = gi; ctx.fill();
       return;
     }
-    // 玻璃
-    ctx.strokeStyle = 'rgba(95,120,130,0.55)'; ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.moveTo(jx - 1.5, rimY); ctx.lineTo(jx - 1.5, bottom - r); ctx.quadraticCurveTo(jx - 1.5, bottom + 1.5, jx + r, bottom + 1.5);
-    ctx.lineTo(jx + jw - r, bottom + 1.5); ctx.quadraticCurveTo(jx + jw + 1.5, bottom + 1.5, jx + jw + 1.5, bottom - r); ctx.lineTo(jx + jw + 1.5, rimY); ctx.stroke();
-    ctx.strokeStyle = 'rgba(255,255,255,0.7)'; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.moveTo(jx + 5, rimY + cs * 0.6); ctx.lineTo(jx + 5, rimY + cs * 3); ctx.stroke();
-    // 瓶口：两边的唇，中间一条虚线；沙子离瓶口不到 1 格时变红闪
+    ctx.save();
+    // 玻璃厚壁：外沿一道暖色描边，里沿一道亮线
+    jarPath(t, rimY); ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(110,60,30,0.55)'; ctx.stroke();
+    jarPath(1, rimY); ctx.lineWidth = 1.5; ctx.strokeStyle = 'rgba(255,245,230,0.55)'; ctx.stroke();
+    // 高光：左边一长条、右边一短条，像晚霞照在玻璃上
+    const hl = (x, y0, y1, w, a) => {
+      const g = ctx.createLinearGradient(x, 0, x + w, 0);
+      g.addColorStop(0, 'rgba(255,255,255,0)'); g.addColorStop(0.5, 'rgba(255,250,240,' + a + ')'); g.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.fillStyle = g; roundRect(x, y0, w, y1 - y0, w / 2); ctx.fill();
+    };
+    hl(jx + cs * 0.18, rimY + cs * 0.5, bottom - cs * 1.6, cs * 0.34, 0.42);
+    hl(jx + cs * 0.62, rimY + cs * 0.8, rimY + cs * 3.2, cs * 0.14, 0.3);
+    hl(jx + jw - cs * 0.5, rimY + cs * 1.2, rimY + cs * 4.5, cs * 0.2, 0.32);
+    // 底部厚玻璃：一道亮弧
+    ctx.strokeStyle = 'rgba(255,240,220,0.5)'; ctx.lineWidth = t * 0.5;
+    ctx.beginPath(); ctx.moveTo(jx + cs * 0.9, bottom + t * 0.45); ctx.lineTo(jx + jw - cs * 0.9, bottom + t * 0.45); ctx.stroke();
+    // 瓶口：一圈加厚的玻璃唇，比瓶身宽一点；沙子快到瓶口时变红闪
     const danger = S.danger(st) && !st.over;
     const red = danger ? 0.45 + 0.55 * ((Math.sin(now * 10) + 1) / 2) : 0;
-    ctx.fillStyle = danger ? `rgba(220,60,40,${red})` : 'rgba(95,120,130,0.7)';
-    roundRect(jx - 8, rimY - 4, 14, 8, 4); ctx.fill();
-    roundRect(jx + jw - 6, rimY - 4, 14, 8, 4); ctx.fill();
-    ctx.strokeStyle = danger ? `rgba(220,60,40,${red})` : 'rgba(95,120,130,0.35)';
+    const lipH = t * 1.5, lx = jx - t * 1.7, lw = jw + t * 3.4, ly = rimY - lipH;
+    const gl = ctx.createLinearGradient(0, ly, 0, ly + lipH);
+    gl.addColorStop(0, 'rgba(255,250,240,0.85)'); gl.addColorStop(0.5, 'rgba(255,225,190,0.45)'); gl.addColorStop(1, 'rgba(200,140,100,0.55)');
+    ctx.fillStyle = gl; roundRect(lx, ly, lw, lipH, lipH / 2); ctx.fill();
+    ctx.lineWidth = 2; ctx.strokeStyle = danger ? 'rgba(230,60,40,' + red + ')' : 'rgba(110,60,30,0.6)'; ctx.stroke();
+    if (danger) { ctx.shadowColor = 'rgba(255,60,40,0.9)'; ctx.shadowBlur = 14 * red; ctx.stroke(); ctx.shadowBlur = 0; }
+    // 瓶口线：一条细虚线，越过就输
+    ctx.strokeStyle = danger ? 'rgba(230,60,40,' + red + ')' : 'rgba(255,240,225,0.45)';
     ctx.lineWidth = danger ? 2.5 : 1.5; ctx.setLineDash([6, 6]);
-    ctx.beginPath(); ctx.moveTo(jx + 6, rimY); ctx.lineTo(jx + jw - 6, rimY); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(jx + 6, rimY + 2); ctx.lineTo(jx + jw - 6, rimY + 2); ctx.stroke();
     ctx.setLineDash([]);
+    ctx.restore();
   }
 
   function drawHints(now) {
@@ -466,14 +569,29 @@
     ctx.restore();
   }
 
+  function drawTrayBase(sl) {
+    const im = IMG.tray_base, w = Math.min(sl.w - 8, L.cs * 3.3), cx = sl.x + sl.w / 2;
+    if (im) {
+      const h = im.height * (w / im.width);
+      ctx.drawImage(im, cx - w / 2, sl.y + sl.h * 0.52 - h * 0.5, w, h);
+    } else {
+      const h = w * 0.62, y = sl.y + sl.h * 0.52 - h / 2;
+      ctx.fillStyle = 'rgba(40,20,10,0.35)'; roundRect(cx - w / 2 + 2, y + 6, w, h, 14); ctx.fill();
+      const g = ctx.createLinearGradient(0, y, 0, y + h);
+      g.addColorStop(0, '#D9A070'); g.addColorStop(1, '#9C5E34');
+      ctx.fillStyle = g; roundRect(cx - w / 2, y, w, h, 14); ctx.fill();
+      ctx.lineWidth = 2.5; ctx.strokeStyle = COCOA; ctx.stroke();
+    }
+  }
   function drawTray() {
     if (st.over) return;   // 结束了底盘让给结果卡片
+    for (let i = 0; i < 3; i++) drawTrayBase(L.slots[i]);
     for (let i = 0; i < 3; i++) {
       const sl = L.slots[i], p = st.tray[i];
       if (!p) continue;
       const { w, h } = pieceSize(p.s);
-      const size = Math.min(L.cs * 0.62, (sl.w - 16) / 4, (sl.h - 16) / 4);
-      const x = sl.x + (sl.w - w * size) / 2, y = sl.y + (sl.h - h * size) / 2;
+      const size = Math.min(L.cs * 0.6, (sl.w - 24) / 4, (sl.h - 24) / 4);
+      const x = sl.x + (sl.w - w * size) / 2, y = sl.y + sl.h * 0.47 - h * size / 2;
       drawPiece(p.s, p.c, x, y, size, drag && drag.slot === i ? 0.25 : 1);
     }
   }
@@ -486,6 +604,12 @@
     ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
   }
 
+  // 奶白填色 + 可可棕描边的字（A 图的样子）
+  function outlined(text, x, y, px, w, fill, stroke, lw) {
+    ctx.font = font(w, px); ctx.lineJoin = 'round';
+    ctx.lineWidth = lw; ctx.strokeStyle = stroke; ctx.strokeText(text, x, y);
+    ctx.fillStyle = fill; ctx.fillText(text, x, y);
+  }
   const kfmt = v => v >= 1e6 ? (v / 1e6) + 'M' : v >= 1000 ? (v / 1000) + 'K' : String(v);
   function drawHud(now) {
     // 分数滚着往上涨，不是一下跳过去
@@ -499,34 +623,42 @@
       mileIdx++;
     }
     ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
-    ctx.fillStyle = '#3B2F25'; ctx.font = '800 34px -apple-system, BlinkMacSystemFont, sans-serif';
-    ctx.fillText(Math.round(shownScore).toLocaleString('en-US'), L.vw / 2, L.top + 42);
-    ctx.fillStyle = '#9A8670'; ctx.font = '600 12px -apple-system, BlinkMacSystemFont, sans-serif';
-    ctx.fillText('BEST ' + Math.max(best, st.score).toLocaleString('en-US'), L.vw / 2, L.top + 58);
+    ctx.save(); ctx.shadowColor = 'rgba(60,20,10,0.35)'; ctx.shadowOffsetY = 2; ctx.shadowBlur = 4;
+    outlined(Math.round(shownScore).toLocaleString('en-US'), L.vw / 2, L.top + 42, 36, 900, CREAM, COCOA, 7);
+    ctx.restore();
+    outlined('BEST ' + Math.max(best, st.score).toLocaleString('en-US'), L.vw / 2, L.top + 58, 12, 800, CREAM, COCOA, 3.5);
     // 下一个里程碑：一条细进度条，右边写着目标
     if (mileIdx < MILESTONES.length) {
       const prev = mileIdx ? MILESTONES[mileIdx - 1] : 0, next = MILESTONES[mileIdx];
       const f = Math.max(0, Math.min(1, (shownScore - prev) / (next - prev)));
-      const bw = Math.min(140, L.jw * 0.42), bh = 7, bx = L.vw / 2 - bw / 2, by = L.top + 66;
-      ctx.fillStyle = 'rgba(122,101,80,0.18)'; roundRect(bx, by, bw, bh, 3.5); ctx.fill();
-      if (f > 0) { ctx.fillStyle = '#E2A72A'; roundRect(bx, by, Math.max(bh, bw * f), bh, 3.5); ctx.fill(); }
-      ctx.textAlign = 'left'; ctx.fillStyle = '#9A8670'; ctx.font = '800 11px -apple-system, BlinkMacSystemFont, sans-serif';
-      ctx.fillText(kfmt(next), bx + bw + 6, by + bh);
+      const bw = Math.min(150, L.jw * 0.44), bh = 9, bx = L.vw / 2 - bw / 2, by = L.top + 65;
+      ctx.fillStyle = 'rgba(60,30,20,0.55)'; roundRect(bx, by, bw, bh, bh / 2); ctx.fill();
+      if (f > 0) {
+        const g = ctx.createLinearGradient(0, by, 0, by + bh);
+        g.addColorStop(0, '#FFE08A'); g.addColorStop(1, '#E39B1E');
+        ctx.fillStyle = g; roundRect(bx, by, Math.max(bh, bw * f), bh, bh / 2); ctx.fill();
+      }
+      ctx.lineWidth = 2; ctx.strokeStyle = COCOA; roundRect(bx, by, bw, bh, bh / 2); ctx.stroke();
+      ctx.textAlign = 'left';
+      outlined(kfmt(next), bx + bw + 7, by + bh, 12, 900, CREAM, COCOA, 3.5);
       ctx.textAlign = 'center';
     }
     // 现在有几种颜色
-    const n = S.colorsAt(st.placed), d = 9;
+    const n = S.colorsAt(st.placed), d = 11;
     for (let c = 1; c <= n; c++) {
-      ctx.fillStyle = COLORS[c];
-      ctx.beginPath(); ctx.arc(L.jx + 6 + (c - 1) * (d + 5), L.top + 40, d / 2, 0, 7); ctx.fill();
+      ctx.fillStyle = COLORS[c]; ctx.strokeStyle = COCOA; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(L.jx + 8 + (c - 1) * (d + 5), L.top + 36, d / 2, 0, 7); ctx.fill(); ctx.stroke();
     }
     // 声音开关（录视频时不画）
     if (REC) return;
-    const s = L.snd;
-    ctx.fillStyle = Snd.on ? '#7A6550' : '#C2B39E';
-    ctx.font = '22px -apple-system, sans-serif';
-    ctx.fillText(Snd.on ? '♪' : '♪̸', s.x + s.w / 2, s.y + 26);
-    if (!Snd.on) { ctx.strokeStyle = '#C2B39E'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(s.x + 8, s.y + 8); ctx.lineTo(s.x + s.w - 8, s.y + s.h - 8); ctx.stroke(); }
+    const s = L.snd, im = Snd.on ? IMG.btn_sound_on : IMG.btn_sound_off;
+    if (im) ctx.drawImage(im, s.x - 2, s.y - 2, s.w + 4, s.h + 4);
+    else {
+      ctx.fillStyle = '#B9774A'; ctx.strokeStyle = COCOA; ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.arc(s.x + s.w / 2, s.y + s.h / 2, s.w / 2, 0, 7); ctx.fill(); ctx.stroke();
+      ctx.textBaseline = 'middle'; outlined(Snd.on ? '♪' : '♪̸', s.x + s.w / 2, s.y + s.h / 2 + 1, 20, 900, CREAM, COCOA, 3); ctx.textBaseline = 'alphabetic';
+      if (!Snd.on) { ctx.strokeStyle = CREAM; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.moveTo(s.x + 9, s.y + 9); ctx.lineTo(s.x + s.w - 9, s.y + s.h - 9); ctx.stroke(); }
+    }
   }
 
   // 同时冒出来的字不叠在一起：跟还没飘走的字挨得太近，就往上挪一行（两次消除同一瞬间、消除又赶上加色时会这样）
@@ -548,20 +680,13 @@
     for (const p of popups) {
       const t = (now - p.t0) / 1.1, y = p.y - 40 * t;
       ctx.globalAlpha = t < 0.7 ? 1 : 1 - (t - 0.7) / 0.3;
-      if (p.small) {   // 放一块的飘分：小、灰、不抢眼
-        ctx.font = '800 16px -apple-system, BlinkMacSystemFont, sans-serif';
-        ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(255,255,255,0.85)'; ctx.strokeText(p.text, p.x, y);
-        ctx.fillStyle = p.c; ctx.fillText(p.text, p.x, y);
+      if (p.small) {   // 放一块的飘分：小、奶白、不抢眼
+        outlined(p.text, p.x, y, 16, 900, CREAM, 'rgba(74,44,28,0.85)', 4);
         ctx.globalAlpha = 1;
         continue;
       }
-      ctx.font = '900 30px -apple-system, BlinkMacSystemFont, sans-serif';
-      ctx.lineWidth = 6; ctx.strokeStyle = '#fff'; ctx.strokeText(p.text, p.x, y);
-      ctx.fillStyle = p.c; ctx.fillText(p.text, p.x, y);
-      if (p.sub) {
-        ctx.font = '800 18px -apple-system, sans-serif';
-        ctx.strokeText(p.sub, p.x, y + 24); ctx.fillStyle = '#3B2F25'; ctx.fillText(p.sub, p.x, y + 24);
-      }
+      outlined(p.text, p.x, y, 32, 900, p.c, COCOA, 7);
+      if (p.sub) outlined(p.sub, p.x, y + 24, 18, 900, CREAM, COCOA, 5);
       ctx.globalAlpha = 1;
     }
   }
@@ -585,7 +710,7 @@
   }
 
   function draw(now) {
-    ctx.fillStyle = BG; ctx.fillRect(0, 0, L.vw, L.vh);
+    drawBackdrop();
     if (bgFlash) {   // 整屏闪成被消的颜色，0.7 秒淡回去
       const t = (now - bgFlash.t0) / 0.7;
       if (t >= 1) bgFlash = null;
@@ -597,6 +722,7 @@
       if (t >= 1) shake = null;
       else { const a = shake.amp * (1 - t); ctx.translate(Math.sin(now * 91.7) * a, Math.cos(now * 77.3) * a); }
     }
+    drawSill();
     drawJar(now, false);
     // 沙子只画在瓶身里：瓶底两个角是圆的，不裁会露到玻璃外面
     ctx.save(); jarClip(); ctx.clip();
