@@ -5,22 +5,84 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <!-- AdSense 验证网站归属（2026-11-26，网页游戏的广告：每日一游 docs/03-网页广告.md） -->
   <meta name="google-adsense-account" content="ca-pub-8296923156982965">
-  <title>lulucard games</title>
+  <title>lulucard games · free games for your phone, tablet and computer</title>
+  <meta name="description" content="Small, bright games from a tiny indie team. Play free in your browser on any device, or get our apps on the App Store.">
+  <link rel="icon" href="daily/icon.png">
+  <!-- 首页（2026-11-26 改）：所有游戏的入口。游戏列表读每日一游的 daily/games.js，加了新游戏这里自动出现；
+       上架的 App 单独一块。AdSense 审核看整个网站，原来只有两个链接，太单薄 -->
   <style>
-    body { margin: 0; padding: 28px 20px; font: 16px/1.6 -apple-system, system-ui, sans-serif; color: #1c2230; background: #f7f4ec; }
-    main { max-width: 640px; margin: 0 auto; }
-    a { color: #2563c9; }
+    :root { --ink: #1c2230; --muted: #5b6070; --bg: #f7f4ec; --card: #fff; --accent: #e8643c; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font: 16px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: var(--ink); background: var(--bg); }
+    main { max-width: 980px; margin: 0 auto; padding: 28px 18px 40px; }
+    header h1 { font-size: 34px; line-height: 1.15; margin: 4px 0 8px; letter-spacing: -0.5px; }
+    header p { margin: 0; color: var(--muted); font-size: 17px; max-width: 620px; }
+    h2 { font-size: 22px; margin: 34px 0 12px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 14px; }
+    .game { display: block; background: var(--card); border-radius: 18px; overflow: hidden; text-decoration: none; color: inherit; box-shadow: 0 2px 10px rgba(30, 30, 50, .08); transition: transform .15s; }
+    .game:hover { transform: translateY(-3px); }
+    .game img { width: 100%; aspect-ratio: 3 / 4; object-fit: cover; display: block; background: #222; }
+    .game .b { padding: 10px 12px 12px; }
+    .game .t { font-weight: 800; font-size: 16px; }
+    .game .v { color: var(--muted); font-size: 13px; line-height: 1.35; margin-top: 2px; }
+    .app { display: flex; gap: 16px; align-items: center; background: var(--card); border-radius: 18px; padding: 16px; box-shadow: 0 2px 10px rgba(30, 30, 50, .08); }
+    .app img { width: 84px; height: 84px; border-radius: 20px; flex: none; }
+    .app .t { font-weight: 800; font-size: 18px; }
+    .app p { margin: 4px 0 10px; color: var(--muted); font-size: 14px; }
+    .btn { display: inline-block; padding: 9px 16px; border-radius: 999px; background: var(--ink); color: #fff; text-decoration: none; font-weight: 700; font-size: 14px; margin: 0 6px 6px 0; }
+    .btn.alt { background: #fff; color: var(--ink); border: 2px solid var(--ink); }
+    .about { color: var(--muted); max-width: 680px; }
+    footer { margin-top: 40px; color: var(--muted); font-size: 14px; }
+    footer a, .about a { color: #2563c9; }
   </style>
 </head>
 <body>
 <main>
-  <h1>lulucard games</h1>
-  <ul>
-    <li><a href="daily/"><b>lulucard daily</b></a> — a tiny new game every day, free in your browser</li>
-    <li><a href="holdyourbreath/">Hold Your Breath: Smoke Dash</a> · <a href="holdyourbreath/privacy.html">Privacy policy</a></li>
-  </ul>
-  <p>Contact: <a href="mailto:support@lulucard.me">support@lulucard.me</a> · <a href="daily/privacy.html">Website privacy</a></p>
+  <header>
+    <h1>lulucard games</h1>
+    <p>Small, bright games from a tiny indie team. Free to play in your browser on your phone, tablet or computer — no install, no sign-up.</p>
+  </header>
+
+  <h2>Play now</h2>
+  <div class="grid" id="games">
+    <!-- 没有 JavaScript 时的静态列表（有 JavaScript 时由 daily/games.js 换成完整的） -->
+    <a class="game" href="daily/sandjar/"><img src="daily/sandjar/thumb.jpg" alt="Sand Jar" loading="lazy"><div class="b"><div class="t">Sand Jar</div><div class="v">Drop the blocks. Join colors wall to wall.</div></div></a>
+    <a class="game" href="daily/meowntain/"><img src="daily/meowntain/thumb.jpg" alt="Meowntain" loading="lazy"><div class="b"><div class="t">Meowntain</div><div class="v">Catch the cats. Stack them high.</div></div></a>
+    <a class="game" href="daily/saywhen/"><img src="daily/saywhen/thumb.jpg" alt="Say When" loading="lazy"><div class="b"><div class="t">Say When</div><div class="v">Hold to pour. Let go at the line.</div></div></a>
+  </div>
+  <p><a class="btn alt" href="daily/">A new game every day: lulucard daily →</a></p>
+
+  <h2>On the App Store</h2>
+  <div class="app">
+    <img src="holdyourbreath/icon.png" alt="Hold Your Breath: Smoke Dash icon">
+    <div>
+      <div class="t">Hold Your Breath: Smoke Dash</div>
+      <p>Hold your breath and dash through the smog of a cartoon New York. Pass smokers on one breath, win them over, and outrun the Big Smog.</p>
+      <a class="btn" href="https://apps.apple.com/app/id6835118803">Download on the App Store</a><a class="btn alt" href="daily/hyb/">Play in your browser</a>
+    </div>
+  </div>
+
+  <h2>About us</h2>
+  <p class="about">We make short, colorful games you can enjoy in a minute or keep playing for an hour. Every game runs on the web, and our favorites also come to iPhone and Android, so you can pick up where you like. Questions or ideas? Write to <a href="mailto:support@lulucard.me">support@lulucard.me</a>.</p>
+
+  <footer>
+    <a href="daily/privacy.html">Website privacy</a> · <a href="holdyourbreath/privacy.html">Hold Your Breath privacy policy</a> · <a href="mailto:support@lulucard.me">support@lulucard.me</a>
+  </footer>
 </main>
+<script src="daily/games.js"></script>
+<script>
+  // 游戏列表跟每日一游同一份（daily/games.js）：日期没到的不显示，最新的在前
+  (function () {
+    var list = window.GAMES || []; if (!list.length) return;
+    var d = new Date(Date.now() + 8 * 3600e3), today = d.toISOString().slice(0, 10);   // 跟每日一游一样按东八区算「今天」
+    var esc = function (s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); };
+    var html = list.filter(function (g) { return g.date <= today; }).sort(function (a, b) { return b.no - a.no; }).map(function (g) {
+      return '<a class="game" href="daily/' + g.slug + '/"><img src="daily/' + g.slug + '/thumb.jpg" alt="' + esc(g.title) + '" loading="lazy" style="object-position:' + (g.focus || '50% 50%') + '">' +
+        '<div class="b"><div class="t">' + esc(g.title) + '</div><div class="v">' + esc(g.verb || '') + '</div></div></a>';
+    }).join('');
+    if (html) document.getElementById('games').innerHTML = html;
+  })();
+</script>
 <script src="daily/a.js"></script>
 </body>
 </html>
