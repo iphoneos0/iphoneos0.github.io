@@ -39,29 +39,32 @@
   const K = 3, VAR = 16, KK = K * K;
   const TILE = new Uint32Array(7 * VAR * KK), TILE_HI = new Uint32Array(7 * VAR * KK);
   // 沙面的光影（docs/07）：迎光的表面一层最亮，往下越深越暗，沙山看起来是立体的
-  const DEPTH_K = [1.16, 1.07, 1.0, 0.94, 0.88];
+  // 2026-11-26 你说沙子「脏、暗」：深处原来暗到 88%，改成最多暗 3%，沙子整体亮、干净
+  const DEPTH_K = [1.12, 1.06, 1.02, 1.0, 0.97];
   const TILE_L = DEPTH_K.map(() => new Uint32Array(7 * VAR * KK));
   {
     let a = 20261122;
     const r01 = () => { a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
     for (let v = 0; v < VAR; v++) {
-      const base = (v / (VAR - 1) - 0.5) * 0.18, warm = (r01() - 0.5) * 0.06;
+      // 颗粒感收着点（2026-11-26 你说沙子脏）：每粒整体只差 ±3.5%，小点之间 ±2.5%，不再有暗点，只留少数亮点
+      const base = (v / (VAR - 1) - 0.5) * 0.07, warm = (r01() - 0.5) * 0.02;
       const dots = [];
-      for (let j = 0; j < KK; j++) dots.push(base + (r01() - 0.5) * 0.10);
-      if (v % 6 === 1) dots[(r01() * KK) | 0] += 0.20;   // 亮点：沙子里反光的石英
-      if (v % 5 === 3) dots[(r01() * KK) | 0] -= 0.16;   // 暗点
+      for (let j = 0; j < KK; j++) dots.push(base + (r01() - 0.5) * 0.05);
+      if (v % 5 === 1) dots[(r01() * KK) | 0] += 0.22;   // 亮点：沙子里反光的石英
       for (let c = 1; c <= 6; c++) {
         const [r, g, b] = rgb(COLORS[c]);
         for (let j = 0; j < KK; j++) {
           const k = 1 + dots[j], o = (c * VAR + v) * KK + j;
-          const R = r * k * (1 + warm), G = g * k, B = b * k * (1 - warm);
+          // 变亮往白里混（直接乘会把颜色推过头、发灰），变暗才乘
+          const lift = (x) => k >= 1 ? x + (255 - x) * (k - 1) : x * k;
+          const R = lift(r * (1 + warm)), G = lift(g), B = lift(b * (1 - warm));
           TILE[o] = pack(R, G, B);
           for (let lv = 0; lv < DEPTH_K.length; lv++) {
             const q = DEPTH_K[lv], up = q > 1;
             TILE_L[lv][o] = up ? pack(R + (255 - R) * (q - 1), G + (255 - G) * (q - 1), B + (255 - B) * (q - 1)) : pack(R * q, G * q, B * q);
           }
-          // 提示时亮一点：只往白色混 35%，混太多会被看成另一种颜色
-          TILE_HI[o] = pack(R * 0.65 + 89, G * 0.65 + 89, B * 0.65 + 89);
+          // 提示时亮一点：往白色混 18%（原来 35%，沙子提亮以后再混那么多就发虚、像粉彩）
+          TILE_HI[o] = pack(R * 0.82 + 46, G * 0.82 + 46, B * 0.82 + 46);
         }
       }
     }
@@ -92,7 +95,7 @@
   }
 
   // ---------- 布局 ----------
-  let L = {};
+  let L = {}, safeProbe = null;
   function layout() {
     const dpr = Math.min(3, window.devicePixelRatio || 1);
     const vw = window.innerWidth, vh = window.innerHeight;
@@ -101,15 +104,23 @@
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     const gameW = Math.min(vw, vh * 0.62);                  // 电脑上也是竖屏，居中
     // 刘海/灵动岛和底部横条让开（进了全屏壳才不是 0）
-    const cssv = k => parseFloat(getComputedStyle(document.documentElement).getPropertyValue(k)) || 0;
-    const sat = cssv('--sat'), sab = cssv('--sab');
+    // 读安全区：CSS 变量里的 env() 取出来是原样的文字（parseFloat 得 0，2026-11-26 真机上顶栏压到灵动岛就是这个），
+    // 要放到一个元素的 padding 上，取算好的像素
+    if (!safeProbe) {
+      safeProbe = document.createElement('div');
+      safeProbe.style.cssText = 'position:fixed;left:0;top:0;width:0;height:0;visibility:hidden;pointer-events:none;' +
+        'padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom)';
+      document.body.appendChild(safeProbe);
+    }
+    const pcs = getComputedStyle(safeProbe);
+    const sat = parseFloat(pcs.paddingTop) || 0, sab = parseFloat(pcs.paddingBottom) || 0;
     const hud = Math.max(84, vh * 0.1) + sat, tray = Math.max(120, vh * 0.2) + sab;
     const cs = Math.floor(Math.min((gameW - 36) / COLS, (vh - hud - tray - 10) / (ROWS + HEAD)));
     const jw = cs * COLS, jh = cs * (ROWS + HEAD);
     const jx = Math.round((vw - jw) / 2), jy = Math.round(hud);
     const trayY = jy + jh + 14, trayH = vh - trayY - 10 - sab;
     const sw = Math.min(gameW - 12, jw + 40) / 3, sx = (vw - sw * 3) / 2;
-    L = { vw, vh, top: sat, cs, gp: cs / CELL, jx, jy, jw, jh, rimY: jy + HEAD * cs, trayY, trayH,
+    L = { vw, vh, top: sat, bot: sab, cs, gp: cs / CELL, jx, jy, jw, jh, rimY: jy + HEAD * cs, trayY, trayH,
       slots: [0, 1, 2].map(i => ({ x: sx + sw * i, y: trayY, w: sw, h: trayH })),
       snd: { x: (vw + gameW) / 2 - 46, y: 14 + sat, w: 36, h: 36 } };
   }
@@ -492,12 +503,12 @@
       // 玻璃本身：外壁一圈
       jarPath(t, rimY);
       const gw = ctx.createLinearGradient(jx - t, 0, jx + jw + t, 0);
-      gw.addColorStop(0, 'rgba(255,236,214,0.55)'); gw.addColorStop(0.5, 'rgba(255,236,214,0.18)'); gw.addColorStop(1, 'rgba(255,200,150,0.5)');
+      gw.addColorStop(0, 'rgba(255,236,214,0.38)'); gw.addColorStop(0.5, 'rgba(255,236,214,0.06)'); gw.addColorStop(1, 'rgba(255,200,150,0.32)');
       ctx.fillStyle = gw; ctx.fill();
       // 瓶里：把背景压暗一点，沙子的颜色才跳得出来（docs/07：日落的粉紫会跟紫沙、红沙抢眼）
       jarPath(0, rimY);
       const gi = ctx.createLinearGradient(0, rimY, 0, bottom);
-      gi.addColorStop(0, 'rgba(70,36,52,0.16)'); gi.addColorStop(1, 'rgba(50,24,30,0.32)');
+      gi.addColorStop(0, 'rgba(60,30,50,0.10)'); gi.addColorStop(1, 'rgba(40,20,30,0.22)');
       ctx.fillStyle = gi; ctx.fill();
       return;
     }
@@ -763,8 +774,17 @@
     while (acc >= 1 / 60 && n < 6) { tick(now); acc -= 1 / 60; n++; }
     draw(now);
   }
+  // 进了全屏壳，iPhone 要等网页排好一会儿才告诉它安全区（灵动岛 62 点）。一开始读到的是 0，
+  // 所以每半秒看一眼，安全区变了就重新排版（2026-11-26 模拟器上查到的）
+  let safeTick = 0;
+  function checkSafe() {
+    if (!safeProbe || ++safeTick % 30) return;
+    const pcs = getComputedStyle(safeProbe);
+    if ((parseFloat(pcs.paddingTop) || 0) !== L.top || (parseFloat(pcs.paddingBottom) || 0) !== L.bot) layout();
+  }
   function frame(t) {
     requestAnimationFrame(frame);
+    checkSafe();
     const dt = (t - last) / 1000; last = t;
     advance(dt, t / 1000);
   }
