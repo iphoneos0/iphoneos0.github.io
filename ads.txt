@@ -1,0 +1,2 @@
+# AdSense（网页广告，2026-11-26 起；跟 AdMob 是同一个发布商编号 pub-8296923156982965，macos0@icloud.com）
+google.com, pub-8296923156982965, DIRECT, f08c47fec0942fa0
