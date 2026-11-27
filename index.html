@@ -2,46 +2,102 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <!-- AdSense 验证网站归属（2026-11-26，网页游戏的广告：每日一游 docs/03-网页广告.md） -->
   <meta name="google-adsense-account" content="ca-pub-8296923156982965">
-  <title>lulucard games · free games for your phone, tablet and computer</title>
-  <meta name="description" content="Small, bright games from a tiny indie team. Play free in your browser on any device, or get our apps on the App Store.">
-  <link rel="icon" href="daily/icon.png">
-  <!-- 首页（2026-11-26 改）：所有游戏的入口。游戏列表读每日一游的 daily/games.js，加了新游戏这里自动出现；
-       上架的 App 单独一块。AdSense 审核看整个网站，原来只有两个链接，太单薄 -->
+  <title>Banana Peel Games · free games for your phone, tablet and computer</title>
+  <meta name="description" content="Small, bright games from a tiny indie team. A new one every day. Play free in your browser on any device, or get our apps on the App Store.">
+  <meta name="theme-color" content="#FFF8EC" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0D2420" media="(prefers-color-scheme: dark)">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Banana Peel Games">
+  <meta property="og:description" content="A tiny new game every day. Free in your browser.">
+  <meta property="og:url" content="https://iphoneos0.com/">
+  <meta property="og:image" content="https://iphoneos0.com/daily/brand/og.jpg">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" href="favicon.ico" sizes="any">
+  <link rel="icon" href="daily/brand/favicon-32.png" sizes="32x32">
+  <link rel="apple-touch-icon" href="daily/brand/apple-touch-icon.png">
+  <!-- 首页：Banana Peel Games，所有游戏的入口（2026-11-27 换成新牌子，样子照每日一游 docs/05 的首页效果图）。
+       品牌素材（标志、吉祥物、字体）在 daily/brand/，源文件在每日一游的 brand/（python3 brand/build.py 生成）。
+       游戏列表读每日一游的 daily/games.js，加了新游戏这里自动出现；上架的 App 单独一块。 -->
   <style>
-    :root { --ink: #1c2230; --muted: #5b6070; --bg: #f7f4ec; --card: #fff; --accent: #e8643c; }
+    @font-face { font-family: "Lilita One"; src: url(daily/brand/LilitaOne-Regular.ttf) format("truetype"); font-display: swap; }
+    :root {
+      --bg: #FFF8EC; --card: #fff; --ink: #12332D; --soft: #5E6F69; --line: #EFE6D6;
+      --teal: #006353; --teal2: #0B7A66; --yellow: #FFD646; --cream: #FFF8EC; --link: #006353;
+      --shadow: 0 1px 0 var(--line), 0 12px 30px rgba(0, 60, 50, .10);
+      --display: "Lilita One", system-ui, sans-serif;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root { --bg: #0D2420; --card: #143530; --ink: #F3FBF7; --soft: #9BB8AF; --line: #1E463F; --link: #FFD646; --shadow: 0 1px 0 var(--line), 0 12px 30px rgba(0, 0, 0, .35); }
+    }
     * { box-sizing: border-box; }
-    body { margin: 0; font: 16px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: var(--ink); background: var(--bg); }
-    main { max-width: 980px; margin: 0 auto; padding: 28px 18px 40px; }
-    header h1 { font-size: 34px; line-height: 1.15; margin: 4px 0 8px; letter-spacing: -0.5px; }
-    header p { margin: 0; color: var(--muted); font-size: 17px; max-width: 620px; }
-    h2 { font-size: 22px; margin: 34px 0 12px; }
+    body { margin: 0; font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: var(--ink); background: var(--bg);
+      padding: 0 max(16px, env(safe-area-inset-right)) 40px max(16px, env(safe-area-inset-left)); }
+    main { max-width: 980px; margin: 0 auto; }
+    .top { padding: max(18px, env(safe-area-inset-top)) 0 14px; }
+    .top img { height: 44px; width: auto; display: block; }
+
+    .hero { position: relative; overflow: hidden; background: var(--teal); color: var(--cream); border-radius: 28px; padding: 30px 24px 0; min-height: 420px; }
+    .hero::after { content: ""; position: absolute; right: -120px; bottom: -170px; width: 460px; height: 460px; border-radius: 50%; background: var(--teal2); }
+    .hero .txt { position: relative; z-index: 2; max-width: 480px; }
+    .hero h1 { font-family: var(--display); font-weight: 400; font-size: clamp(40px, 10vw, 64px); line-height: 1; margin: 0 0 12px; }
+    .hero p { margin: 0 0 18px; font-size: 17px; opacity: .9; max-width: 380px; }
+    .play { display: inline-flex; align-items: center; gap: 9px; background: var(--yellow); color: #12332D; text-decoration: none;
+      font-family: var(--display); font-size: 22px; padding: 11px 26px; border-radius: 999px; box-shadow: 0 6px 0 #D9AE1E; }
+    .play svg { width: 16px; height: 16px; }
+    .play:hover { transform: translateY(-1px); }
+    .today { display: block; margin-top: 12px; font-size: 14px; opacity: .8; min-height: 1.5em; }
+    .hero .mascot { position: relative; z-index: 1; display: block; width: min(80%, 340px); height: auto; margin: 4px -6px 10px auto; }
+    @media (min-width: 760px) {
+      .hero { padding: 54px 48px; min-height: 440px; }
+      .hero .mascot { position: absolute; right: 30px; bottom: 22px; width: 400px; margin: 0; }
+    }
+
+    h2 { font-family: var(--display); font-weight: 400; font-size: 28px; margin: 40px 0 14px; }
     .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 14px; }
-    .game { display: block; background: var(--card); border-radius: 18px; overflow: hidden; text-decoration: none; color: inherit; box-shadow: 0 2px 10px rgba(30, 30, 50, .08); transition: transform .15s; }
+    @media (min-width: 720px) { .grid { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 18px; } }
+    .game { display: block; background: var(--card); border-radius: 18px; overflow: hidden; text-decoration: none; color: inherit; box-shadow: var(--shadow); transition: transform .15s; }
     .game:hover { transform: translateY(-3px); }
     .game img { width: 100%; aspect-ratio: 3 / 4; object-fit: cover; display: block; background: #222; }
     .game .b { padding: 10px 12px 12px; }
-    .game .t { font-weight: 800; font-size: 16px; }
-    .game .v { color: var(--muted); font-size: 13px; line-height: 1.35; margin-top: 2px; }
-    .app { display: flex; gap: 16px; align-items: center; background: var(--card); border-radius: 18px; padding: 16px; box-shadow: 0 2px 10px rgba(30, 30, 50, .08); }
+    .game .t { font-family: var(--display); font-size: 19px; line-height: 1.15; }
+    .game .v { color: var(--soft); font-size: 13px; line-height: 1.35; margin-top: 3px; }
+    .more { display: inline-block; margin-top: 16px; font-weight: 700; color: var(--link); }
+
+    .app { display: flex; gap: 16px; align-items: center; background: var(--card); border-radius: 22px; padding: 18px; box-shadow: var(--shadow); }
     .app img { width: 84px; height: 84px; border-radius: 20px; flex: none; }
-    .app .t { font-weight: 800; font-size: 18px; }
-    .app p { margin: 4px 0 10px; color: var(--muted); font-size: 14px; }
-    .btn { display: inline-block; padding: 9px 16px; border-radius: 999px; background: var(--ink); color: #fff; text-decoration: none; font-weight: 700; font-size: 14px; margin: 0 6px 6px 0; }
-    .btn.alt { background: #fff; color: var(--ink); border: 2px solid var(--ink); }
-    .about { color: var(--muted); max-width: 680px; }
-    footer { margin-top: 40px; color: var(--muted); font-size: 14px; }
-    footer a, .about a { color: #2563c9; }
+    .app .t { font-family: var(--display); font-size: 22px; line-height: 1.15; }
+    .app p { margin: 4px 0 10px; color: var(--soft); font-size: 14px; }
+    .btn { display: inline-block; padding: 9px 16px; border-radius: 999px; background: var(--teal); color: #fff; text-decoration: none; font-weight: 700; font-size: 14px; margin: 0 6px 6px 0; }
+    .btn.alt { background: transparent; color: var(--ink); border: 2px solid var(--line); }
+
+    .about { display: flex; gap: 18px; align-items: center; }
+    .about img { width: 120px; height: auto; flex: none; }
+    .about p { color: var(--soft); margin: 0; max-width: 620px; }
+    .about a, footer a { color: var(--link); }
+    footer { margin-top: 40px; color: var(--soft); font-size: 14px; }
   </style>
 </head>
 <body>
 <main>
-  <header>
-    <h1>lulucard games</h1>
-    <p>Small, bright games from a tiny indie team. Free to play in your browser on your phone, tablet or computer — no install, no sign-up.</p>
+  <header class="top">
+    <a href="./" aria-label="Banana Peel Games home"><picture>
+      <source srcset="daily/brand/logo-on-dark.png" media="(prefers-color-scheme: dark)">
+      <img src="daily/brand/logo.png" alt="Banana Peel Games">
+    </picture></a>
   </header>
+
+  <section class="hero">
+    <div class="txt">
+      <h1>A tiny new game every day.</h1>
+      <p>Free. Nothing to install. Bright little games for your phone, tablet or computer.</p>
+      <a class="play" id="play" href="daily/"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5v11l9-5.5z" fill="currentColor"/></svg>Play</a>
+      <span class="today" id="today"></span>
+    </div>
+    <img class="mascot" src="daily/brand/mascot-hi.webp" alt="" width="640" height="489">
+  </section>
 
   <h2>Play now</h2>
   <div class="grid" id="games">
@@ -50,7 +106,7 @@
     <a class="game" href="daily/meowntain/"><img src="daily/meowntain/thumb.jpg" alt="Meowntain" loading="lazy"><div class="b"><div class="t">Meowntain</div><div class="v">Catch the cats. Stack them high.</div></div></a>
     <a class="game" href="daily/saywhen/"><img src="daily/saywhen/thumb.jpg" alt="Say When" loading="lazy"><div class="b"><div class="t">Say When</div><div class="v">Hold to pour. Let go at the line.</div></div></a>
   </div>
-  <p><a class="btn alt" href="daily/">A new game every day: lulucard daily →</a></p>
+  <a class="more" href="daily/">All games, newest first →</a>
 
   <h2>On the App Store</h2>
   <div class="app">
@@ -63,24 +119,31 @@
   </div>
 
   <h2>About us</h2>
-  <p class="about">We make short, colorful games you can enjoy in a minute or keep playing for an hour. Every game runs on the web, and our favorites also come to iPhone and Android, so you can pick up where you like. Questions or ideas? Write to <a href="mailto:support@lulucard.me">support@lulucard.me</a>.</p>
+  <div class="about">
+    <img src="daily/brand/mascot-yay.webp" alt="" loading="lazy" width="640" height="579">
+    <p>We make short, colorful games you can enjoy in a minute or keep playing for an hour. Every game runs on the web, and our favorites also come to iPhone and Android, so you can pick up where you like. Questions or ideas? Write to <a href="mailto:support@lulucard.me">support@lulucard.me</a>.</p>
+  </div>
 
   <footer>
-    <a href="daily/privacy.html">Website privacy</a> · <a href="holdyourbreath/privacy.html">Hold Your Breath privacy policy</a> · <a href="mailto:support@lulucard.me">support@lulucard.me</a>
+    © Banana Peel Games · <a href="daily/privacy.html">Website privacy</a> · <a href="holdyourbreath/privacy.html">Hold Your Breath privacy policy</a>
   </footer>
 </main>
 <script src="daily/games.js"></script>
 <script>
-  // 游戏列表跟每日一游同一份（daily/games.js）：日期没到的不显示，最新的在前
+  // 游戏列表跟每日一游同一份（daily/games.js）：日期没到的不显示，最新的在前；大按钮去最新的那一款
   (function () {
     var list = window.GAMES || []; if (!list.length) return;
     var d = new Date(Date.now() + 8 * 3600e3), today = d.toISOString().slice(0, 10);   // 跟每日一游一样按东八区算「今天」
     var esc = function (s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); };
-    var html = list.filter(function (g) { return g.date <= today; }).sort(function (a, b) { return b.no - a.no; }).map(function (g) {
+    list = list.filter(function (g) { return g.date <= today; }).sort(function (a, b) { return b.no - a.no; });
+    if (!list.length) return;
+    var g0 = list[0];
+    document.getElementById('play').href = 'daily/' + g0.slug + '/';
+    document.getElementById('today').textContent = (g0.date === today ? "Today's game: " : 'Latest: ') + g0.title;
+    document.getElementById('games').innerHTML = list.map(function (g) {
       return '<a class="game" href="daily/' + g.slug + '/"><img src="daily/' + g.slug + '/thumb.jpg" alt="' + esc(g.title) + '" loading="lazy" style="object-position:' + (g.focus || '50% 50%') + '">' +
         '<div class="b"><div class="t">' + esc(g.title) + '</div><div class="v">' + esc(g.verb || '') + '</div></div></a>';
     }).join('');
-    if (html) document.getElementById('games').innerHTML = html;
   })();
 </script>
 <script src="daily/a.js"></script>
